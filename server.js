@@ -14,6 +14,7 @@ const Commission = require('./models/Commission');
 // Import routes
 const authRoutes = require('./routes/authRoutes');
 const productRoutes = require('./routes/productRoutes');
+const seederRoutes = require('./routes/seederRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -48,6 +49,7 @@ Category.belongsTo(Category, { foreignKey: 'parentId', as: 'parent' });
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api', productRoutes);
+app.use('/api', seederRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
