@@ -10,8 +10,10 @@ const Category = require('./models/Category');
 const AffiliateLink = require('./models/AffiliateLink');
 const Commission = require('./models/Commission');
 
+
 // Import routes
 const authRoutes = require('./routes/authRoutes');
+const productRoutes = require('./routes/productRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -45,6 +47,7 @@ Category.belongsTo(Category, { foreignKey: 'parentId', as: 'parent' });
 
 // Routes
 app.use('/api/auth', authRoutes);
+app.use('/api', productRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {

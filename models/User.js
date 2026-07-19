@@ -157,4 +157,10 @@ User.generateAffiliateId = function(name) {
   return `${prefix}${namePart}${random}`;
 };
 
+// Add this association
+User.hasMany(Product, { 
+  foreignKey: 'addedBy',
+  as: 'addedProducts'
+});
+
 module.exports = User;
