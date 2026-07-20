@@ -8,13 +8,13 @@ const User = require('./models/User');
 const Product = require('./models/Product');
 const Category = require('./models/Category');
 const AffiliateLink = require('./models/AffiliateLink');
-const Commission = require('./models/Commission');
+const Commission = require('./models/CommissionModel');
 
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');
 const productRoutes = require('./routes/productRoutes');
-const seederRoutes = require('./routes/seederRoutes');
+const seederRoutes = require('./routes/seedersRoute');
 
 const app = express();
 const PORT = process.env.PORT || 5000;

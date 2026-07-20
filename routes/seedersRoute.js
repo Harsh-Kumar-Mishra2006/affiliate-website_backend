@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const authenticate = require('../middleware/auth');
-const { isAdmin } = require('../middleware/roleCheck');
+const authenticate = require('../middlewares/auth');
+const { isAdmin } = require('../middlewares/roleCheck');
 const seedProducts = require('../seeders/productSeeder');
 const { sequelize } = require('../config/db');
 
