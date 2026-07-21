@@ -98,6 +98,14 @@ const Product = sequelize.define('Product', {
       model: 'users',
       key: 'id'
     }
+  },
+  purchaseCount: {
+    type: DataTypes.INTEGER,
+    defaultValue: 0
+  },
+  totalRevenue: {
+    type: DataTypes.DECIMAL(10, 2),
+    defaultValue: 0.00
   }
 }, {
   timestamps: true
