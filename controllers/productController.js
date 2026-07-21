@@ -5,6 +5,7 @@ const { Op } = require('sequelize');
 const { sequelize } = require('../config/db');
 
 // ============= AFFILIATE: ADD PRODUCT =============
+// ============= AFFILIATE: ADD PRODUCT =============
 const addProduct = async (req, res) => {
   const transaction = await sequelize.transaction();
   
@@ -74,7 +75,6 @@ const addProduct = async (req, res) => {
     });
 
     if (!categoryRecord) {
-      // Create new category if it doesn't exist
       categoryRecord = await Category.create({
         name: category,
         slug: category.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
@@ -83,7 +83,7 @@ const addProduct = async (req, res) => {
     }
 
     // Generate slug from name
-    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now().toString(36);
 
     // Create product
     const product = await Product.create({
@@ -91,13 +91,13 @@ const addProduct = async (req, res) => {
       slug,
       description: description || `${name} - Premium quality product from ${company}`,
       shortDescription: shortDescription || null,
-      price,
-      discountedPrice: discountedPrice || null,
+      price: parseFloat(price),
+      discountedPrice: discountedPrice ? parseFloat(discountedPrice) : null,
       company,
       categoryId: categoryRecord.id,
       brand: brand || company,
       sku: productId,
-      stock: stock || 0,
+      stock: stock ? parseInt(stock) : 0,
       affiliateUrl: affiliateUrl || null,
       images: images || [],
       mainImage: mainImage || null,
@@ -117,6 +117,7 @@ const addProduct = async (req, res) => {
       include: [
         {
           model: Category,
+          as: 'category',
           attributes: ['id', 'name', 'slug']
         },
         {
@@ -144,6 +145,8 @@ const addProduct = async (req, res) => {
 };
 
 // ============= GET ALL PRODUCTS (Public) =============
+// productController.js - Update the getAllProducts function
+
 const getAllProducts = async (req, res) => {
   try {
     const {
@@ -205,11 +208,12 @@ const getAllProducts = async (req, res) => {
       include: [
         {
           model: Category,
+          as: 'category', // ✅ Add this alias
           attributes: ['id', 'name', 'slug']
         },
         {
           model: User,
-          as: 'addedByUser',
+          as: 'addedByUser', // ✅ Add this alias
           attributes: ['id', 'name', 'email', 'role']
         }
       ],
@@ -303,6 +307,7 @@ const getProductById = async (req, res) => {
 };
 
 // ============= GET PRODUCTS BY AFFILIATE =============
+// ============= GET PRODUCTS BY AFFILIATE =============
 const getProductsByAffiliate = async (req, res) => {
   try {
     const affiliateId = req.params.id || req.user.id;
@@ -323,6 +328,7 @@ const getProductsByAffiliate = async (req, res) => {
       include: [
         {
           model: Category,
+          as: 'category',
           attributes: ['id', 'name', 'slug']
         }
       ],
@@ -349,7 +355,7 @@ const getProductsByAffiliate = async (req, res) => {
     console.error("Get Affiliate Products Error:", err);
     res.status(500).json({
       success: false,
-      error: "Failed to fetch affiliate products"
+      error: "Failed to fetch affiliate products: " + err.message
     });
   }
 };
@@ -710,6 +716,7 @@ const getFeaturedProducts = async (req, res) => {
 };
 
 // ============= GET PRODUCT STATISTICS (Admin/Affiliate) =============
+// ============= GET PRODUCT STATISTICS (Admin/Affiliate) =============
 const getProductStats = async (req, res) => {
   try {
     const userId = req.user.id;
@@ -720,44 +727,32 @@ const getProductStats = async (req, res) => {
       whereClause.addedBy = userId;
     }
 
-    const totalProducts = await Product.count({ where: whereClause });
-
-    const activeProducts = await Product.count({
+    const total = await Product.count({ where: whereClause });
+    const active = await Product.count({
       where: { ...whereClause, isActive: true }
     });
-
-    const inactiveProducts = await Product.count({
+    const inactive = await Product.count({
       where: { ...whereClause, isActive: false }
     });
-
-    // Get top products by affiliate clicks/conversions
-    const AffiliateLink = require('../models/AffiliateLink');
     
-    const topProducts = await AffiliateLink.findAll({
-      attributes: [
-        'productId',
-        [sequelize.fn('SUM', sequelize.col('clicks')), 'totalClicks'],
-        [sequelize.fn('SUM', sequelize.col('conversions')), 'totalConversions']
-      ],
-      include: [
-        {
-          model: Product,
-          where: role === 'affiliate' ? { addedBy: userId } : {},
-          attributes: ['id', 'name', 'price', 'company', 'mainImage']
-        }
-      ],
-      group: ['productId'],
-      order: [[sequelize.literal('totalClicks'), 'DESC']],
-      limit: 10
+    // Calculate total revenue
+    const products = await Product.findAll({
+      where: whereClause,
+      attributes: ['totalRevenue']
+    });
+    
+    let totalRevenue = 0;
+    products.forEach(product => {
+      totalRevenue += parseFloat(product.totalRevenue) || 0;
     });
 
     res.json({
       success: true,
       data: {
-        totalProducts,
-        activeProducts,
-        inactiveProducts,
-        topProducts
+        total: total || 0,
+        active: active || 0,
+        inactive: inactive || 0,
+        totalRevenue: totalRevenue || 0
       }
     });
 
@@ -765,7 +760,7 @@ const getProductStats = async (req, res) => {
     console.error("Get Product Stats Error:", err);
     res.status(500).json({
       success: false,
-      error: "Failed to fetch product statistics"
+      error: "Failed to fetch product statistics: " + err.message
     });
   }
 };

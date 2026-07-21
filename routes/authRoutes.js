@@ -8,6 +8,7 @@ const {
   addAffiliate,
   getAffiliates,
   getAffiliateProfile,
+  getAffiliateStats,
   login,
   changePassword,
   forgotPassword,
@@ -68,6 +69,9 @@ router.put('/admin/affiliates/:id', authenticate, isAdmin, updateAffiliateStatus
 
 // Reset Affiliate Password
 router.post('/admin/affiliates/:id/reset-password', authenticate, isAdmin, resetAffiliatePassword);
+
+// Add this route
+router.get('/admin/affiliates/stats', authenticate, isAdmin, getAffiliateStats);
 
 // Get All Users
 router.get('/admin/users', authenticate, isAdmin, getAllUsers);

@@ -9,13 +9,13 @@ const Category = sequelize.define('Category', {
   },
   name: {
     type: DataTypes.STRING(100),
-    allowNull: false,
-    unique: true
+    allowNull: false
+    // ✅ REMOVE: unique: true - this is causing the error
   },
   slug: {
     type: DataTypes.STRING(100),
     allowNull: false,
-    unique: true
+    unique: true  // ✅ Keep unique on slug only
   },
   description: {
     type: DataTypes.TEXT

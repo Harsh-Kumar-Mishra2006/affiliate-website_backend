@@ -308,6 +308,64 @@ const getAffiliateProfile = async (req, res) => {
   }
 };
 
+// ============= ADMIN: Get Affiliate Stats =============
+const getAffiliateStats = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Only admin can view affiliate stats'
+      });
+    }
+
+    const totalAffiliates = await User.count({ where: { role: 'affiliate' } });
+    const activeAffiliates = await User.count({ 
+      where: { role: 'affiliate', isActive: true } 
+    });
+    const inactiveAffiliates = await User.count({ 
+      where: { role: 'affiliate', isActive: false } 
+    });
+    
+    const totalEarnings = await User.sum('totalEarnings', { 
+      where: { role: 'affiliate' } 
+    });
+    
+    // If you have a Commission model
+    let totalCommissions = 0;
+    let pendingCommissions = 0;
+    try {
+      const Commission = require('../models/CommissionModel');
+      totalCommissions = await Commission.sum('amount', {
+        where: { status: 'approved' }
+      }) || 0;
+      pendingCommissions = await Commission.sum('amount', {
+        where: { status: 'pending' }
+      }) || 0;
+    } catch (err) {
+      // Commission model might not exist yet
+      console.log('Commission model not found, using default values');
+    }
+
+    res.json({
+      success: true,
+      data: {
+        totalAffiliates: totalAffiliates || 0,
+        activeAffiliates: activeAffiliates || 0,
+        inactiveAffiliates: inactiveAffiliates || 0,
+        totalEarnings: Number(totalEarnings) || 0,
+        totalCommissions: Number(totalCommissions) || 0,
+        pendingCommissions: Number(pendingCommissions) || 0
+      }
+    });
+  } catch (err) {
+    console.error("Get Affiliate Stats Error:", err);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch affiliate stats: " + err.message
+    });
+  }
+};
+
 // ============= LOGIN (For all users) =============
 const login = async (req, res) => {
   try {
@@ -1023,6 +1081,7 @@ module.exports = {
   addAffiliate,
   getAffiliates,
   getAffiliateProfile,
+  getAffiliateStats,
   login,
   changePassword,
   forgotPassword,

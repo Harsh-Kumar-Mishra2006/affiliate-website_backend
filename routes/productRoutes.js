@@ -17,19 +17,10 @@ const {
 } = require('../controllers/productController');
 
 // ============= PUBLIC ROUTES =============
-// Get all products (with filters)
 router.get('/products', getAllProducts);
-
-// Search products
 router.get('/products/search', searchProducts);
-
-// Get featured products
 router.get('/products/featured', getFeaturedProducts);
-
-// Get products by category
 router.get('/products/category/:categorySlug', getProductsByCategory);
-
-// Get single product by ID or slug
 router.get('/products/:id', getProductById);
 
 // ============= AUTHENTICATED ROUTES =============
