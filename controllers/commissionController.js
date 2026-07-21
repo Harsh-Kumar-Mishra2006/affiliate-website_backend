@@ -1,4 +1,4 @@
-const Commission = require('../models/Commission');
+const Commission = require('../models/CommissionModel');
 const User = require('../models/User');
 const Product = require('../models/Product');
 const Purchase = require('../models/Purchase');

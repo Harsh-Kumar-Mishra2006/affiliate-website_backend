@@ -1,7 +1,7 @@
 const Purchase = require('../models/Purchase');
 const Product = require('../models/Product');
 const User = require('../models/User');
-const Commission = require('../models/Commission');
+const Commission = require('../models/CommissionModel');
 const { sequelize } = require('../config/db');
 const { Op } = require('sequelize');
 

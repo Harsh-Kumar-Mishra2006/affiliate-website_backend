@@ -1,68 +1,102 @@
-// server.js
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { sequelize, testConnection } = require('./config/db');
+const fs = require('fs');
+const path = require('path');
 
-// Import models in correct order
+// Create uploads directory if it doesn't exist
+const uploadsDir = path.join(__dirname, 'uploads/payments');
+if (!fs.existsSync(uploadsDir)) {
+  fs.mkdirSync(uploadsDir, { recursive: true });
+}
+
+// Import models
 const Category = require('./models/Category');
 const User = require('./models/User');
 const Product = require('./models/Product');
 const AffiliateLink = require('./models/AffiliateLink');
 const Commission = require('./models/CommissionModel');
+const Purchase = require('./models/Purchase');
 
 // Import routes
 const authRoutes = require('./routes/authRoutes');
 const productRoutes = require('./routes/productRoutes');
 const seederRoutes = require('./routes/seedersRoute');
+const purchaseRoutes = require('./routes/purchaseRoutes');
+const commissionRoutes = require('./routes/commissionRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
 
 // Middleware
 app.use(cors({
-  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
-  credentials: true
+  origin: process.env.FRONTEND_URL || 'http://localhost:5173',
+  credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'Accept'],
+  exposedHeaders: ['Authorization']
 }));
+
+// Handle preflight requests
+app.options('/*splat', cors());
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Set up model associations (only define associations that aren't already in models)
+// Serve static files for uploads
+app.use('/uploads', express.static('uploads'));
+
+// Set up model associations with unique aliases
 const setupAssociations = () => {
-  // User associations - REMOVED the duplicate 'addedProducts' association
-  // The User.hasMany(Product, { foreignKey: 'addedBy', as: 'addedProducts' }) is already defined in User.js
-  User.hasMany(AffiliateLink, { foreignKey: 'userId' });
-  User.hasMany(Commission, { foreignKey: 'userId' });
-  // User.hasMany(Product, { foreignKey: 'addedBy', as: 'addedProducts' }); // <-- REMOVE THIS LINE
+  // ============ USER ASSOCIATIONS ============
+  User.hasMany(AffiliateLink, { foreignKey: 'userId', as: 'affiliateLinks' });
+  User.hasMany(Commission, { foreignKey: 'userId', as: 'commissions' });
+  User.hasMany(Purchase, { foreignKey: 'userId', as: 'userPurchases' });
+  User.hasMany(Purchase, { foreignKey: 'affiliateId', as: 'affiliateEarnings' });
+  User.hasMany(Purchase, { foreignKey: 'paymentVerifiedBy', as: 'verifiedPurchases' });
 
-  // Product associations
-  Product.belongsTo(Category, { foreignKey: 'categoryId' });
+  // ============ PRODUCT ASSOCIATIONS ============
+  Product.belongsTo(Category, { foreignKey: 'categoryId', as: 'category' });
   Product.belongsTo(User, { foreignKey: 'addedBy', as: 'addedByUser' });
-  Product.hasMany(AffiliateLink, { foreignKey: 'productId' });
+  Product.hasMany(AffiliateLink, { foreignKey: 'productId', as: 'productAffiliateLinks' });
+  Product.hasMany(Purchase, { foreignKey: 'productId', as: 'productPurchases' });
+  Product.hasMany(Commission, { foreignKey: 'productId', as: 'productCommissions' });
 
-  // Category associations
-  Category.hasMany(Product, { foreignKey: 'categoryId' });
+  // ============ CATEGORY ASSOCIATIONS ============
+  Category.hasMany(Product, { foreignKey: 'categoryId', as: 'products' });
   Category.hasMany(Category, { foreignKey: 'parentId', as: 'subcategories' });
-  Category.belongsTo(Category, { foreignKey: 'parentId', as: 'parent' });
+  Category.belongsTo(Category, { foreignKey: 'parentId', as: 'parentCategory' });
 
-  // AffiliateLink associations
-  AffiliateLink.belongsTo(User, { foreignKey: 'userId' });
-  AffiliateLink.belongsTo(Product, { foreignKey: 'productId' });
-  AffiliateLink.hasMany(Commission, { foreignKey: 'affiliateLinkId' });
+  // ============ AFFILIATE LINK ASSOCIATIONS ============
+  AffiliateLink.belongsTo(User, { foreignKey: 'userId', as: 'affiliateUser' });
+  AffiliateLink.belongsTo(Product, { foreignKey: 'productId', as: 'affiliateProduct' });
+  AffiliateLink.hasMany(Commission, { foreignKey: 'affiliateLinkId', as: 'linkCommissions' });
 
-  // Commission associations
-  Commission.belongsTo(User, { foreignKey: 'userId' });
-  Commission.belongsTo(Product, { foreignKey: 'productId' });
-  Commission.belongsTo(AffiliateLink, { foreignKey: 'affiliateLinkId' });
+  // ============ COMMISSION ASSOCIATIONS ============
+  Commission.belongsTo(User, { foreignKey: 'userId', as: 'commissionAffiliate' });
+  Commission.belongsTo(Product, { foreignKey: 'productId', as: 'commissionProduct' });
+  Commission.belongsTo(AffiliateLink, { foreignKey: 'affiliateLinkId', as: 'commissionLink' });
+  Commission.belongsTo(Purchase, { foreignKey: 'orderId', targetKey: 'orderId', as: 'commissionPurchase' });
+
+  // ============ PURCHASE ASSOCIATIONS ============
+  Purchase.belongsTo(User, { foreignKey: 'userId', as: 'purchaser' });
+  Purchase.belongsTo(User, { foreignKey: 'affiliateId', as: 'purchaseAffiliate' });
+  Purchase.belongsTo(User, { foreignKey: 'paymentVerifiedBy', as: 'paymentVerifier' });
+  Purchase.belongsTo(Product, { foreignKey: 'productId', as: 'purchasedProduct' });
+  Purchase.hasOne(Commission, { foreignKey: 'orderId', sourceKey: 'orderId', as: 'purchaseCommission' });
+
+  console.log('✅ All model associations configured successfully');
 };
 
-// Call setup associations
 setupAssociations();
 
 // Routes
 app.use('/api/auth', authRoutes);
 app.use('/api', productRoutes);
 app.use('/api', seederRoutes);
+app.use('/api', purchaseRoutes);
+app.use('/api', commissionRoutes);
 
 // Health check
 app.get('/api/health', (req, res) => {
@@ -73,20 +107,21 @@ app.get('/api/health', (req, res) => {
   });
 });
 
-// Error handling middleware
+// 404 handler - MUST be before error handler
+app.use((req, res) => {
+  console.log(`404: ${req.method} ${req.url} not found`);
+  res.status(404).json({
+    success: false,
+    error: `Route ${req.method} ${req.url} not found`
+  });
+});
+
+// Error handling middleware - ALWAYS last
 app.use((err, req, res, next) => {
   console.error('Error:', err.stack);
   res.status(500).json({
     success: false,
-    error: 'Something went wrong!'
-  });
-});
-
-// 404 handler
-app.use((req, res) => {
-  res.status(404).json({
-    success: false,
-    error: 'Route not found'
+    error: err.message || 'Something went wrong!'
   });
 });
 
@@ -96,37 +131,31 @@ const startServer = async () => {
     // Test database connection
     await testConnection();
     
-    console.log('🔄 Creating tables in correct order...');
+    console.log('🔄 Checking database schema...');
     
-    // Disable foreign key checks temporarily
-    await sequelize.query('SET FOREIGN_KEY_CHECKS = 0');
+    // Check if Users table exists
+    const [tables] = await sequelize.query('SHOW TABLES');
+    const tableNames = tables.map(t => Object.values(t)[0]);
+    const hasUsersTable = tableNames.includes('Users');
     
-    // Sync tables in correct order (parent tables first)
-    await Category.sync({ alter: true });
-    console.log('✅ Categories table created');
-    
-    await User.sync({ alter: true });
-    console.log('✅ Users table created');
-    
-    await Product.sync({ alter: true });
-    console.log('✅ Products table created');
-    
-    await AffiliateLink.sync({ alter: true });
-    console.log('✅ AffiliateLinks table created');
-    
-    await Commission.sync({ alter: true });
-    console.log('✅ Commissions table created');
-    
-    // Re-enable foreign key checks
-    await sequelize.query('SET FOREIGN_KEY_CHECKS = 1');
-    
-    console.log('✅ All tables synchronized successfully');
+    if (hasUsersTable) {
+      console.log('⚠️ Tables already exist. Using existing schema...');
+      // Just sync without altering - this won't change the schema
+      await sequelize.sync({ alter: false });
+      console.log('✅ Tables checked successfully');
+    } else {
+      console.log('🔄 No tables found. Creating fresh schema...');
+      // Create fresh tables
+      await sequelize.sync({ force: true });
+      console.log('✅ All tables created successfully');
+    }
     
     // Start server
     app.listen(PORT, () => {
       console.log(`🚀 Server is running on port ${PORT}`);
       console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
       console.log(`🔗 API URL: http://localhost:${PORT}/api`);
+      console.log(`📁 Uploads directory: ${uploadsDir}`);
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);

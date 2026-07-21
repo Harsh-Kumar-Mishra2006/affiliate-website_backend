@@ -1,7 +1,7 @@
 const express = require('express');
 const router = express.Router();
-const authenticate = require('../middleware/auth');
-const { isAdmin, isAffiliate } = require('../middleware/roleCheck');
+const authenticate = require('../middlewares/auth');
+const { isAdmin, isAffiliate } = require('../middlewares/roleCheck');
 const {
   getAllCommissions,
   updateCommissionStatus,
