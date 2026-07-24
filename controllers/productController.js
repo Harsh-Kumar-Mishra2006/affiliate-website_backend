@@ -4,17 +4,16 @@ const User = require('../models/User');
 const { Op } = require('sequelize');
 const { sequelize } = require('../config/db');
 
-// ============= AFFILIATE: ADD PRODUCT =============
-// ============= AFFILIATE: ADD PRODUCT =============
+// ============= ADMIN ONLY: ADD PRODUCT =============
 const addProduct = async (req, res) => {
   const transaction = await sequelize.transaction();
   
   try {
-    // Only affiliates and admin can add products
-    if (req.user.role !== 'affiliate' && req.user.role !== 'admin') {
+    // ✅ ONLY ADMIN can add products
+    if (req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
-        error: 'Only affiliates and admin can add products'
+        error: 'Access denied. Only admin can add products.'
       });
     }
 
@@ -144,9 +143,7 @@ const addProduct = async (req, res) => {
   }
 };
 
-// ============= GET ALL PRODUCTS (Public) =============
-// productController.js - Update the getAllProducts function
-
+// ============= GET ALL PRODUCTS (Public - Anyone can view) =============
 const getAllProducts = async (req, res) => {
   try {
     const {
@@ -208,12 +205,12 @@ const getAllProducts = async (req, res) => {
       include: [
         {
           model: Category,
-          as: 'category', // ✅ Add this alias
+          as: 'category',
           attributes: ['id', 'name', 'slug']
         },
         {
           model: User,
-          as: 'addedByUser', // ✅ Add this alias
+          as: 'addedByUser',
           attributes: ['id', 'name', 'email', 'role']
         }
       ],
@@ -226,8 +223,6 @@ const getAllProducts = async (req, res) => {
     // Calculate average rating and review count
     const productsWithStats = rows.map(product => {
       const productData = product.toJSON();
-      // In a real app, you'd have a Review model
-      // For now, we'll use placeholder values
       productData.averageRating = productData.rating || 0;
       productData.reviewCount = productData.reviews || 0;
       return productData;
@@ -288,10 +283,6 @@ const getProductById = async (req, res) => {
       });
     }
 
-    // Increment view count (optional)
-    // product.viewCount = (product.viewCount || 0) + 1;
-    // await product.save();
-
     res.json({
       success: true,
       data: product
@@ -306,87 +297,27 @@ const getProductById = async (req, res) => {
   }
 };
 
-// ============= GET PRODUCTS BY AFFILIATE =============
-// ============= GET PRODUCTS BY AFFILIATE =============
-const getProductsByAffiliate = async (req, res) => {
-  try {
-    const affiliateId = req.params.id || req.user.id;
-    
-    // Check permission
-    if (req.user.role !== 'admin' && req.user.id !== parseInt(affiliateId)) {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied'
-      });
-    }
-
-    const { page = 1, limit = 20 } = req.query;
-    const offset = (page - 1) * limit;
-
-    const { count, rows } = await Product.findAndCountAll({
-      where: { addedBy: affiliateId },
-      include: [
-        {
-          model: Category,
-          as: 'category',
-          attributes: ['id', 'name', 'slug']
-        }
-      ],
-      order: [['createdAt', 'DESC']],
-      limit: parseInt(limit),
-      offset: parseInt(offset),
-      distinct: true
-    });
-
-    res.json({
-      success: true,
-      data: {
-        products: rows,
-        pagination: {
-          total: count,
-          page: parseInt(page),
-          limit: parseInt(limit),
-          totalPages: Math.ceil(count / limit)
-        }
-      }
-    });
-
-  } catch (err) {
-    console.error("Get Affiliate Products Error:", err);
-    res.status(500).json({
-      success: false,
-      error: "Failed to fetch affiliate products: " + err.message
-    });
-  }
-};
-
-// ============= UPDATE PRODUCT =============
+// ============= ADMIN ONLY: UPDATE PRODUCT =============
 const updateProduct = async (req, res) => {
   const transaction = await sequelize.transaction();
   
   try {
     const { id } = req.params;
+    
+    // ✅ ONLY ADMIN can update products
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Only admin can update products.'
+      });
+    }
+
     const product = await Product.findByPk(id);
 
     if (!product) {
       return res.status(404).json({
         success: false,
         error: 'Product not found'
-      });
-    }
-
-    // Check permission: Affiliate can only update their own products, Admin can update any
-    if (req.user.role === 'affiliate' && product.addedBy !== req.user.id) {
-      return res.status(403).json({
-        success: false,
-        error: 'You can only update your own products'
-      });
-    }
-
-    if (req.user.role === 'user') {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied'
       });
     }
 
@@ -456,7 +387,7 @@ const updateProduct = async (req, res) => {
     if (metaTitle) updateData.metaTitle = metaTitle;
     if (metaDescription) updateData.metaDescription = metaDescription;
     if (isActive !== undefined) updateData.isActive = isActive;
-    if (isFeatured !== undefined && req.user.role === 'admin') updateData.isFeatured = isFeatured;
+    if (isFeatured !== undefined) updateData.isFeatured = isFeatured;
 
     await product.update(updateData, { transaction });
     await transaction.commit();
@@ -492,33 +423,27 @@ const updateProduct = async (req, res) => {
   }
 };
 
-// ============= DELETE PRODUCT =============
+// ============= ADMIN ONLY: DELETE PRODUCT =============
 const deleteProduct = async (req, res) => {
   const transaction = await sequelize.transaction();
   
   try {
     const { id } = req.params;
+    
+    // ✅ ONLY ADMIN can delete products
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Only admin can delete products.'
+      });
+    }
+
     const product = await Product.findByPk(id);
 
     if (!product) {
       return res.status(404).json({
         success: false,
         error: 'Product not found'
-      });
-    }
-
-    // Check permission
-    if (req.user.role === 'affiliate' && product.addedBy !== req.user.id) {
-      return res.status(403).json({
-        success: false,
-        error: 'You can only delete your own products'
-      });
-    }
-
-    if (req.user.role === 'user') {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied'
       });
     }
 
@@ -553,7 +478,7 @@ const deleteProduct = async (req, res) => {
   }
 };
 
-// ============= GET PRODUCTS BY CATEGORY =============
+// ============= GET PRODUCTS BY CATEGORY (Public) =============
 const getProductsByCategory = async (req, res) => {
   try {
     const { categorySlug } = req.params;
@@ -616,7 +541,7 @@ const getProductsByCategory = async (req, res) => {
   }
 };
 
-// ============= SEARCH PRODUCTS =============
+// ============= SEARCH PRODUCTS (Public) =============
 const searchProducts = async (req, res) => {
   try {
     const { q } = req.query;
@@ -678,7 +603,7 @@ const searchProducts = async (req, res) => {
   }
 };
 
-// ============= GET FEATURED PRODUCTS =============
+// ============= GET FEATURED PRODUCTS (Public) =============
 const getFeaturedProducts = async (req, res) => {
   try {
     const { limit = 10 } = req.query;
@@ -715,29 +640,27 @@ const getFeaturedProducts = async (req, res) => {
   }
 };
 
-// ============= GET PRODUCT STATISTICS (Admin/Affiliate) =============
-// ============= GET PRODUCT STATISTICS (Admin/Affiliate) =============
+// ============= ADMIN ONLY: GET PRODUCT STATISTICS =============
 const getProductStats = async (req, res) => {
   try {
-    const userId = req.user.id;
-    const role = req.user.role;
-
-    const whereClause = {};
-    if (role === 'affiliate') {
-      whereClause.addedBy = userId;
+    // ✅ ONLY ADMIN can view product stats
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Only admin can view product statistics.'
+      });
     }
 
-    const total = await Product.count({ where: whereClause });
+    const total = await Product.count();
     const active = await Product.count({
-      where: { ...whereClause, isActive: true }
+      where: { isActive: true }
     });
     const inactive = await Product.count({
-      where: { ...whereClause, isActive: false }
+      where: { isActive: false }
     });
     
     // Calculate total revenue
     const products = await Product.findAll({
-      where: whereClause,
       attributes: ['totalRevenue']
     });
     
@@ -765,15 +688,16 @@ const getProductStats = async (req, res) => {
   }
 };
 
-// ============= BULK PRODUCT UPLOAD (Admin/ Affiliate) =============
+// ============= ADMIN ONLY: BULK PRODUCT UPLOAD =============
 const bulkUploadProducts = async (req, res) => {
   const transaction = await sequelize.transaction();
   
   try {
-    if (req.user.role !== 'affiliate' && req.user.role !== 'admin') {
+    // ✅ ONLY ADMIN can bulk upload products
+    if (req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
-        error: 'Only affiliates and admin can bulk upload products'
+        error: 'Access denied. Only admin can bulk upload products.'
       });
     }
 
@@ -916,16 +840,79 @@ const bulkUploadProducts = async (req, res) => {
   }
 };
 
+// ============= ADMIN ONLY: GET PRODUCTS BY ADMIN =============
+// (This is for admin to see all products including inactive ones)
+const getAdminProducts = async (req, res) => {
+  try {
+    // ✅ ONLY ADMIN can view all products (including inactive)
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Only admin can view all products.'
+      });
+    }
+
+    const { page = 1, limit = 50, showInactive = false } = req.query;
+    const offset = (page - 1) * limit;
+
+    const whereClause = {};
+    if (!showInactive) {
+      whereClause.isActive = true;
+    }
+
+    const { count, rows } = await Product.findAndCountAll({
+      where: whereClause,
+      include: [
+        {
+          model: Category,
+          as: 'category',
+          attributes: ['id', 'name', 'slug']
+        },
+        {
+          model: User,
+          as: 'addedByUser',
+          attributes: ['id', 'name', 'email', 'role']
+        }
+      ],
+      order: [['createdAt', 'DESC']],
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      distinct: true
+    });
+
+    res.json({
+      success: true,
+      data: {
+        products: rows,
+        pagination: {
+          total: count,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          totalPages: Math.ceil(count / limit)
+        }
+      }
+    });
+
+  } catch (err) {
+    console.error("Get Admin Products Error:", err);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch products: " + err.message
+    });
+  }
+};
+
+// ============= EXPORT ALL FUNCTIONS =============
 module.exports = {
   addProduct,
   getAllProducts,
   getProductById,
-  getProductsByAffiliate,
   updateProduct,
   deleteProduct,
   getProductsByCategory,
   searchProducts,
   getFeaturedProducts,
   getProductStats,
-  bulkUploadProducts
+  bulkUploadProducts,
+  getAdminProducts  // New function for admin to see all products
 };

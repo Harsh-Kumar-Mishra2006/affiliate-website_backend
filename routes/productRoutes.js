@@ -1,46 +1,47 @@
 const express = require('express');
 const router = express.Router();
-const authenticate = require('../middlewares/auth');
-const { isAdmin, isAffiliate } = require('../middlewares/roleCheck');
+const { authenticate } = require('../middlewares/auth');
+const { isAdmin } = require('../middlewares/roleCheck');  // ✅ Only isAdmin now
 const {
   addProduct,
   getAllProducts,
   getProductById,
-  getProductsByAffiliate,
   updateProduct,
   deleteProduct,
   getProductsByCategory,
   searchProducts,
   getFeaturedProducts,
   getProductStats,
-  bulkUploadProducts
+  bulkUploadProducts,
+  getAdminProducts
 } = require('../controllers/productController');
 
-// ============= PUBLIC ROUTES =============
+// ============= PUBLIC ROUTES (Anyone can view) =============
 router.get('/products', getAllProducts);
 router.get('/products/search', searchProducts);
 router.get('/products/featured', getFeaturedProducts);
 router.get('/products/category/:categorySlug', getProductsByCategory);
 router.get('/products/:id', getProductById);
 
-// ============= AUTHENTICATED ROUTES =============
-// Add product (Affiliate/Admin only)
-router.post('/products', authenticate, isAffiliate, addProduct);
+// ============= ADMIN ONLY ROUTES (Product Management) =============
+// ✅ All these routes require: Authentication + Admin role
 
-// Bulk upload products (Affiliate/Admin only)
-router.post('/products/bulk', authenticate, isAffiliate, bulkUploadProducts);
+// Add a single product
+router.post('/products', authenticate, isAdmin, addProduct);
 
-// Get products by affiliate
-router.get('/affiliate/products', authenticate, isAffiliate, getProductsByAffiliate);
-router.get('/affiliate/products/:id', authenticate, isAffiliate, getProductsByAffiliate);
+// Bulk upload multiple products
+router.post('/products/bulk', authenticate, isAdmin, bulkUploadProducts);
+
+// Get all products (including inactive ones) - Admin view
+router.get('/admin/products', authenticate, isAdmin, getAdminProducts);
 
 // Get product statistics
-router.get('/products/stats', authenticate, isAffiliate, getProductStats);
+router.get('/products/stats', authenticate, isAdmin, getProductStats);
 
-// Update product (Affiliate can update own, Admin can update any)
-router.put('/products/:id', authenticate, updateProduct);
+// Update a product
+router.put('/products/:id', authenticate, isAdmin, updateProduct);
 
-// Delete product (Affiliate can delete own, Admin can delete any)
-router.delete('/products/:id', authenticate, deleteProduct);
+// Delete a product
+router.delete('/products/:id', authenticate, isAdmin, deleteProduct);
 
 module.exports = router;
