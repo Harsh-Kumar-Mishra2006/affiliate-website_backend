@@ -1,7 +1,8 @@
 const express = require('express');
 const router = express.Router();
-const { authenticate } = require('../middlewares/auth');
-const { isAdmin } = require('../middlewares/roleCheck');  // ✅ Only isAdmin now
+const  authenticate  = require('../middlewares/auth');  // ✅ FIXED: Destructure
+const { isAdmin } = require('../middlewares/roleCheck');
+
 const {
   addProduct,
   getAllProducts,
