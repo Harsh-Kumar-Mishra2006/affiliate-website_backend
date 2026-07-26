@@ -420,9 +420,20 @@ const verifyPayment = async (req, res) => {
       });
     }
 
-    // Find purchase
+    // Find purchase with all details
     const purchase = await Purchase.findOne({
-      where: { orderId }
+      where: { orderId },
+      include: [
+        {
+          model: Product,
+          attributes: ['id', 'name', 'addedBy', 'price', 'discountedPrice']
+        },
+        {
+          model: User,
+          as: 'affiliate',
+          attributes: ['id', 'name', 'email']
+        }
+      ]
     });
 
     if (!purchase) {
@@ -450,7 +461,7 @@ const verifyPayment = async (req, res) => {
 
     // If verified, process commission
     if (status === 'verified') {
-      // Update product purchase count
+      // Update product purchase count and revenue
       await Product.increment('purchaseCount', {
         by: purchase.quantity,
         where: { id: purchase.productId },
@@ -463,34 +474,102 @@ const verifyPayment = async (req, res) => {
         transaction
       });
 
-      // Create commission record for affiliate
-      if (purchase.affiliateId && purchase.commissionAmount > 0) {
+      // === COMMISSION DISTRIBUTION LOGIC ===
+      const totalAmount = parseFloat(purchase.totalAmount);
+      const affiliateRate = parseFloat(purchase.commissionRate); // Already set (10-25%)
+      
+      // Calculate commissions
+      const affiliateCommission = parseFloat((totalAmount * (affiliateRate / 100)).toFixed(2));
+      
+      // Admin gets the remaining amount (75-90%)
+      const adminRate = parseFloat((100 - affiliateRate).toFixed(2));
+      const adminCommission = parseFloat((totalAmount * (adminRate / 100)).toFixed(2));
+
+      // Find the admin who added the product
+      const adminUser = await User.findByPk(purchase.Product.addedBy);
+      
+      if (adminUser) {
+        // Create commission record for affiliate
         const commission = await Commission.create({
-          userId: purchase.affiliateId,
-          affiliateLinkId: null, // Will be linked if affiliate link is tracked
+          affiliateId: purchase.affiliateId,
+          adminId: purchase.Product.addedBy,
           productId: purchase.productId,
+          purchaseId: purchase.id,
           orderId: purchase.orderId,
-          amount: purchase.commissionAmount,
-          commissionRate: purchase.commissionRate,
+          affiliateCommissionAmount: affiliateCommission,
+          affiliateCommissionRate: affiliateRate,
+          adminCommissionAmount: adminCommission,
+          adminCommissionRate: adminRate,
+          totalAmount: totalAmount,
           status: 'approved',
-          orderDate: new Date(),
-          notes: `Commission for order ${purchase.orderId}`
+          paymentDate: new Date(),
+          notes: `Commission split: ${affiliateRate}% (₹${affiliateCommission}) to affiliate, ${adminRate}% (₹${adminCommission}) to admin`
         }, { transaction });
 
-        // Update affiliate's total earnings
+        // Update affiliate's earnings
+        if (purchase.affiliateId) {
+          await User.increment('totalEarnings', {
+            by: affiliateCommission,
+            where: { id: purchase.affiliateId },
+            transaction
+          });
+
+          await User.increment('availableBalance', {
+            by: affiliateCommission,
+            where: { id: purchase.affiliateId },
+            transaction
+          });
+        }
+
+        // Update admin's earnings
         await User.increment('totalEarnings', {
-          by: purchase.commissionAmount,
-          where: { id: purchase.affiliateId },
+          by: adminCommission,
+          where: { id: purchase.Product.addedBy },
           transaction
         });
 
         await User.increment('availableBalance', {
-          by: purchase.commissionAmount,
-          where: { id: purchase.affiliateId },
+          by: adminCommission,
+          where: { id: purchase.Product.addedBy },
           transaction
         });
 
-        console.log(`✅ Commission of ₹${purchase.commissionAmount} added to affiliate ${purchase.affiliateId}`);
+        console.log(`✅ Commission Distributed:
+          - Affiliate (${purchase.affiliateId}): ${affiliateRate}% = ₹${affiliateCommission}
+          - Admin (${purchase.Product.addedBy}): ${adminRate}% = ₹${adminCommission}
+          - Total: ₹${totalAmount}
+        `);
+      } else {
+        // Fallback: If no admin found, give all to affiliate
+        await Commission.create({
+          affiliateId: purchase.affiliateId,
+          adminId: null,
+          productId: purchase.productId,
+          purchaseId: purchase.id,
+          orderId: purchase.orderId,
+          affiliateCommissionAmount: totalAmount,
+          affiliateCommissionRate: 100,
+          adminCommissionAmount: 0,
+          adminCommissionRate: 0,
+          totalAmount: totalAmount,
+          status: 'approved',
+          paymentDate: new Date(),
+          notes: 'Admin not found - full commission to affiliate'
+        }, { transaction });
+
+        if (purchase.affiliateId) {
+          await User.increment('totalEarnings', {
+            by: totalAmount,
+            where: { id: purchase.affiliateId },
+            transaction
+          });
+
+          await User.increment('availableBalance', {
+            by: totalAmount,
+            where: { id: purchase.affiliateId },
+            transaction
+          });
+        }
       }
     }
 
@@ -498,8 +577,16 @@ const verifyPayment = async (req, res) => {
 
     res.json({
       success: true,
-      data: purchase,
-      message: `Payment ${status} successfully${status === 'verified' ? ' and commission processed' : ''}`
+      data: {
+        purchase,
+        commission: {
+          affiliateRate: purchase.commissionRate,
+          affiliateAmount: purchase.commissionAmount,
+          adminRate: 100 - parseFloat(purchase.commissionRate),
+          adminAmount: parseFloat(purchase.totalAmount) - parseFloat(purchase.commissionAmount)
+        }
+      },
+      message: `Payment ${status} successfully and commission distributed`
     });
 
   } catch (err) {
@@ -620,6 +707,224 @@ const getMyCommissions = async (req, res) => {
   }
 };
 
+// Add this to purchaseController.js
+
+// ============= ADMIN: Get Commission Summary =============
+const getCommissionSummary = async (req, res) => {
+  try {
+    const { period = 'all' } = req.query; // 'today', 'week', 'month', 'all'
+    
+    let dateFilter = {};
+    const now = new Date();
+    
+    if (period === 'today') {
+      dateFilter = {
+        createdAt: {
+          [Op.gte]: new Date(now.setHours(0, 0, 0, 0))
+        }
+      };
+    } else if (period === 'week') {
+      const weekAgo = new Date(now);
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      dateFilter = {
+        createdAt: {
+          [Op.gte]: weekAgo
+        }
+      };
+    } else if (period === 'month') {
+      const monthAgo = new Date(now);
+      monthAgo.setMonth(monthAgo.getMonth() - 1);
+      dateFilter = {
+        createdAt: {
+          [Op.gte]: monthAgo
+        }
+      };
+    }
+
+    // Get all commissions with details
+    const commissions = await Commission.findAll({
+      where: dateFilter,
+      include: [
+        {
+          model: User,
+          as: 'affiliate',
+          attributes: ['id', 'name', 'email']
+        },
+        {
+          model: User,
+          as: 'admin',
+          attributes: ['id', 'name', 'email']
+        },
+        {
+          model: Product,
+          attributes: ['id', 'name']
+        },
+        {
+          model: Purchase,
+          attributes: ['id', 'buyerName', 'buyerEmail']
+        }
+      ],
+      order: [['createdAt', 'DESC']]
+    });
+
+    // Calculate summary
+    const summary = {
+      totalCommissions: await Commission.sum('totalAmount', { 
+        where: dateFilter 
+      }),
+      totalAffiliateCommission: await Commission.sum('affiliateCommissionAmount', {
+        where: dateFilter
+      }),
+      totalAdminCommission: await Commission.sum('adminCommissionAmount', {
+        where: dateFilter
+      }),
+      totalCommissionsCount: commissions.length,
+      pendingApproval: await Commission.count({
+        where: { 
+          ...dateFilter,
+          status: 'pending'
+        }
+      }),
+      paid: await Commission.count({
+        where: { 
+          ...dateFilter,
+          status: 'paid'
+        }
+      }),
+      byAdmin: await Commission.findAll({
+        where: dateFilter,
+        attributes: [
+          'adminId',
+          [sequelize.fn('SUM', sequelize.col('adminCommissionAmount')), 'totalAdminCommission']
+        ],
+        group: ['adminId'],
+        include: [
+          {
+            model: User,
+            as: 'admin',
+            attributes: ['id', 'name', 'email']
+          }
+        ]
+      }),
+      byAffiliate: await Commission.findAll({
+        where: dateFilter,
+        attributes: [
+          'affiliateId',
+          [sequelize.fn('SUM', sequelize.col('affiliateCommissionAmount')), 'totalAffiliateCommission']
+        ],
+        group: ['affiliateId'],
+        include: [
+          {
+            model: User,
+            as: 'affiliate',
+            attributes: ['id', 'name', 'email']
+          }
+        ]
+      })
+    };
+
+    res.json({
+      success: true,
+      data: {
+        commissions,
+        summary,
+        period
+      }
+    });
+
+  } catch (err) {
+    console.error('Get Commission Summary Error:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch commission summary: ' + err.message
+    });
+  }
+};
+
+// ============= AFFILIATE: Get Affiliate Commission Summary =============
+const getAffiliateCommissionSummary = async (req, res) => {
+  try {
+    const { page = 1, limit = 20, status } = req.query;
+    const offset = (page - 1) * limit;
+    const affiliateId = req.user.id;
+
+    const whereClause = { affiliateId };
+    if (status) {
+      whereClause.status = status;
+    }
+
+    const { count, rows } = await Commission.findAndCountAll({
+      where: whereClause,
+      include: [
+        {
+          model: Product,
+          attributes: ['id', 'name', 'mainImage', 'company']
+        },
+        {
+          model: User,
+          as: 'admin',
+          attributes: ['id', 'name', 'email']
+        },
+        {
+          model: Purchase,
+          attributes: ['id', 'orderId', 'buyerName', 'buyerEmail', 'createdAt']
+        }
+      ],
+      order: [['createdAt', 'DESC']],
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      distinct: true
+    });
+
+    // Enhanced summary for affiliate
+    const summary = {
+      totalCommission: await Commission.sum('affiliateCommissionAmount', { 
+        where: { affiliateId } 
+      }),
+      approvedCommission: await Commission.sum('affiliateCommissionAmount', {
+        where: { affiliateId, status: 'approved' }
+      }),
+      paidCommission: await Commission.sum('affiliateCommissionAmount', {
+        where: { affiliateId, status: 'paid' }
+      }),
+      pendingCommission: await Commission.sum('affiliateCommissionAmount', {
+        where: { affiliateId, status: 'pending' }
+      }),
+      totalOrders: await Commission.count({
+        where: { affiliateId }
+      }),
+      averageCommissionRate: await Commission.findAll({
+        where: { affiliateId },
+        attributes: [
+          [sequelize.fn('AVG', sequelize.col('affiliateCommissionRate')), 'avgRate']
+        ],
+        raw: true
+      }).then(result => result[0]?.avgRate || 0)
+    };
+
+    res.json({
+      success: true,
+      data: {
+        commissions: rows,
+        summary,
+        pagination: {
+          total: count,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          totalPages: Math.ceil(count / limit)
+        }
+      }
+    });
+
+  } catch (err) {
+    console.error('Get Affiliate Commission Summary Error:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch affiliate commission summary: ' + err.message
+    });
+  }
+};
+
 module.exports = {
   initiatePurchase,
   uploadPaymentScreenshot,
@@ -628,5 +933,7 @@ module.exports = {
   getAllPurchases,
   verifyPayment,
   getPurchaseById,
-  getMyCommissions
+  getMyCommissions,
+  getCommissionSummary,
+  getAffiliateCommissionSummary
 };
