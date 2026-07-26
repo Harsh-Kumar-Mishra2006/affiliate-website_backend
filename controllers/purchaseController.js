@@ -226,17 +226,17 @@ const getMyPurchases = async (req, res) => {
 
     const { count, rows } = await Purchase.findAndCountAll({
       where: whereClause,
-      include: [
-        {
-          model: Product,
-          attributes: ['id', 'name', 'mainImage', 'company']
-        },
-        {
-          model: User,
-          as: 'affiliate',
-          attributes: ['id', 'name', 'email']
-        }
-      ],
+      // include: [
+      //   {
+      //     model: Product,
+      //     attributes: ['id', 'name', 'mainImage', 'company']
+      //   },
+      //   {
+      //     model: User,
+      //     as: 'affiliate',
+      //     attributes: ['id', 'name', 'email']
+      //   }
+      // ],
       order: [['createdAt', 'DESC']],
       limit: parseInt(limit),
       offset: parseInt(offset),
