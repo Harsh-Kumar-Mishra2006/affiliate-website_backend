@@ -1,3 +1,4 @@
+// productController.js
 const Product = require('../models/Product');
 const Category = require('../models/Category');
 const User = require('../models/User');
@@ -111,12 +112,12 @@ const addProduct = async (req, res) => {
 
     await transaction.commit();
 
-    // Fetch complete product with category
+    // Fetch complete product with category - ✅ FIXED: Added 'as' keyword
     const completeProduct = await Product.findByPk(product.id, {
       include: [
         {
           model: Category,
-          as: 'category',
+          as: 'category',  // ✅ Added the alias
           attributes: ['id', 'name', 'slug']
         },
         {
@@ -205,7 +206,7 @@ const getAllProducts = async (req, res) => {
       include: [
         {
           model: Category,
-          as: 'category',
+          as: 'category',  // ✅ Added the alias
           attributes: ['id', 'name', 'slug']
         },
         {
@@ -245,12 +246,12 @@ const getAllProducts = async (req, res) => {
     console.error("Get All Products Error:", err);
     res.status(500).json({
       success: false,
-      error: "Failed to fetch products"
+      error: "Failed to fetch products: " + err.message
     });
   }
 };
 
-// ============= GET PRODUCT BY ID OR SLUG (Public) =============
+// ============= GET PRODUCT BY ID OR SLUG (Public) - ✅ FIXED =============
 const getProductById = async (req, res) => {
   try {
     const { id } = req.params;
@@ -266,6 +267,7 @@ const getProductById = async (req, res) => {
       include: [
         {
           model: Category,
+          as: 'category',  // ✅ Added the 'as' keyword
           attributes: ['id', 'name', 'slug', 'description']
         },
         {
@@ -292,7 +294,7 @@ const getProductById = async (req, res) => {
     console.error("Get Product Error:", err);
     res.status(500).json({
       success: false,
-      error: "Failed to fetch product"
+      error: "Failed to fetch product: " + err.message
     });
   }
 };
@@ -392,11 +394,12 @@ const updateProduct = async (req, res) => {
     await product.update(updateData, { transaction });
     await transaction.commit();
 
-    // Fetch updated product
+    // Fetch updated product - ✅ FIXED: Added 'as' keyword
     const updatedProduct = await Product.findByPk(id, {
       include: [
         {
           model: Category,
+          as: 'category',  // ✅ Added the alias
           attributes: ['id', 'name', 'slug']
         },
         {
@@ -509,6 +512,7 @@ const getProductsByCategory = async (req, res) => {
       include: [
         {
           model: Category,
+          as: 'category',  // ✅ Added the alias
           attributes: ['id', 'name', 'slug']
         }
       ],
@@ -536,7 +540,7 @@ const getProductsByCategory = async (req, res) => {
     console.error("Get Products By Category Error:", err);
     res.status(500).json({
       success: false,
-      error: "Failed to fetch category products"
+      error: "Failed to fetch category products: " + err.message
     });
   }
 };
@@ -569,6 +573,7 @@ const searchProducts = async (req, res) => {
       include: [
         {
           model: Category,
+          as: 'category',  // ✅ Added the alias
           attributes: ['id', 'name', 'slug']
         }
       ],
@@ -598,7 +603,7 @@ const searchProducts = async (req, res) => {
     console.error("Search Products Error:", err);
     res.status(500).json({
       success: false,
-      error: "Failed to search products"
+      error: "Failed to search products: " + err.message
     });
   }
 };
@@ -616,6 +621,7 @@ const getFeaturedProducts = async (req, res) => {
       include: [
         {
           model: Category,
+          as: 'category',  // ✅ Added the alias
           attributes: ['id', 'name', 'slug']
         }
       ],
@@ -635,7 +641,7 @@ const getFeaturedProducts = async (req, res) => {
     console.error("Get Featured Products Error:", err);
     res.status(500).json({
       success: false,
-      error: "Failed to fetch featured products"
+      error: "Failed to fetch featured products: " + err.message
     });
   }
 };
@@ -651,22 +657,30 @@ const getProductStats = async (req, res) => {
       });
     }
 
-    const total = await Product.count();
-    const active = await Product.count({
-      where: { isActive: true }
-    });
-    const inactive = await Product.count({
-      where: { isActive: false }
-    });
+    const [total, active, inactive] = await Promise.all([
+      Product.count(),
+      Product.count({ where: { isActive: true } }),
+      Product.count({ where: { isActive: false } })
+    ]);
     
     // Calculate total revenue
-    const products = await Product.findAll({
-      attributes: ['totalRevenue']
-    });
-    
-    let totalRevenue = 0;
-    products.forEach(product => {
-      totalRevenue += parseFloat(product.totalRevenue) || 0;
+    const revenueResult = await Product.sum('totalRevenue');
+    const totalRevenue = revenueResult || 0;
+
+    // Get category breakdown
+    const categoryStats = await Product.findAll({
+      attributes: [
+        'categoryId',
+        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+      ],
+      include: [
+        {
+          model: Category,
+          as: 'category',  // ✅ Added the alias
+          attributes: ['id', 'name']
+        }
+      ],
+      group: ['categoryId', 'category.id']
     });
 
     res.json({
@@ -675,7 +689,8 @@ const getProductStats = async (req, res) => {
         total: total || 0,
         active: active || 0,
         inactive: inactive || 0,
-        totalRevenue: totalRevenue || 0
+        totalRevenue: totalRevenue || 0,
+        categoryBreakdown: categoryStats
       }
     });
 
@@ -841,7 +856,6 @@ const bulkUploadProducts = async (req, res) => {
 };
 
 // ============= ADMIN ONLY: GET PRODUCTS BY ADMIN =============
-// (This is for admin to see all products including inactive ones)
 const getAdminProducts = async (req, res) => {
   try {
     // ✅ ONLY ADMIN can view all products (including inactive)
@@ -865,7 +879,7 @@ const getAdminProducts = async (req, res) => {
       include: [
         {
           model: Category,
-          as: 'category',
+          as: 'category',  // ✅ Added the alias
           attributes: ['id', 'name', 'slug']
         },
         {
@@ -914,5 +928,5 @@ module.exports = {
   getFeaturedProducts,
   getProductStats,
   bulkUploadProducts,
-  getAdminProducts  // New function for admin to see all products
+  getAdminProducts
 };
