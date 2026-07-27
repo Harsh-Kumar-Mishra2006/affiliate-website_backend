@@ -624,9 +624,22 @@ const resetPassword = async (req, res) => {
 };
 
 // ============= VERIFY TOKEN =============
+// In authController.js - Fixed verifyToken function
+
+// ============= VERIFY TOKEN =============
 const verifyToken = async (req, res) => {
   try {
-    const token = req.header('Authorization')?.replace('Bearer ', '');
+    // Get token from Authorization header
+    const authHeader = req.header('Authorization');
+    
+    if (!authHeader) {
+      return res.status(401).json({
+        success: false,
+        error: 'No authorization header provided'
+      });
+    }
+
+    const token = authHeader.replace('Bearer ', '');
     
     if (!token) {
       return res.status(401).json({
@@ -635,9 +648,23 @@ const verifyToken = async (req, res) => {
       });
     }
 
-    const decoded = jwt.verify(token, JWT_SECRET);
+    // Verify token
+    let decoded;
+    try {
+      decoded = jwt.verify(token, JWT_SECRET);
+    } catch (jwtError) {
+      console.error('JWT Verification Error:', jwtError.message);
+      return res.status(401).json({
+        success: false,
+        error: 'Invalid or expired token'
+      });
+    }
+
+    // Find user
     const user = await User.findByPk(decoded.userId, {
-      attributes: { exclude: ['password', 'resetPasswordToken', 'resetPasswordExpires', 'tempPassword'] }
+      attributes: { 
+        exclude: ['password', 'resetPasswordToken', 'resetPasswordExpires', 'tempPassword'] 
+      }
     });
     
     if (!user) {
@@ -647,18 +674,28 @@ const verifyToken = async (req, res) => {
       });
     }
 
+    if (!user.isActive) {
+      return res.status(403).json({
+        success: false,
+        error: 'Account is deactivated'
+      });
+    }
+
+    // Return user data with token validity
     res.json({
       success: true,
       data: {
         valid: true,
-        needsPasswordChange: user.needsPasswordChange,
+        needsPasswordChange: user.needsPasswordChange || false,
         user: {
           id: user.id,
           name: user.name,
           email: user.email,
           username: user.username,
           role: user.role,
-          phone: user.phone
+          phone: user.phone,
+          affiliateId: user.affiliateId || null,
+          commissionRate: user.commissionRate || null
         }
       }
     });
