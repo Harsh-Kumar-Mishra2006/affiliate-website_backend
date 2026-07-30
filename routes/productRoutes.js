@@ -3,7 +3,7 @@ const express = require('express');
 const router = express.Router();
 const authenticate = require('../middlewares/auth');
 const { isAdmin, isAffiliate, isUser } = require('../middlewares/roleCheck');
-const { upload } = require('../config/cloudinary');
+const { upload } = require('../config/Cloudinary');
 
 const {
   addProduct,
