@@ -1108,8 +1108,6 @@ const resetAffiliatePassword = async (req, res) => {
 
 module.exports = {
   signup,
-  adminSignup,
-  userSignup,
   addAffiliate,
   getAffiliates,
   getAffiliateProfile,
