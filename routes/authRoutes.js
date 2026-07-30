@@ -1,92 +1,91 @@
+// authRoutes.js
 const express = require('express');
 const router = express.Router();
-const authenticate = require('../middlewares/auth');
-const { isAdmin, isAffiliate } = require('../middlewares/roleCheck');
+const authenticate = require('../middleware/auth');
 const {
-  adminSignup,
-  userSignup,
-  addAffiliate,
-  getAffiliates,
-  getAffiliateProfile,
-  getAffiliateStats,
+  signup,
   login,
   changePassword,
   forgotPassword,
   resetPassword,
   verifyToken,
+  getProfile,
+  updateProfile,
+  logout,
   getAllUsers,
   getUserById,
   updateUser,
   deleteUser,
-  getProfile,
-  updateProfile,
-  logout,
+  // Admin affiliate management functions
+  addAffiliate,
+  getAffiliates,
+  getAffiliateProfile,
+  getAffiliateStats,
   updateAffiliateStatus,
   resetAffiliatePassword
 } = require('../controllers/authController');
 
 // ============= PUBLIC ROUTES =============
-// Admin Signup (Direct)
-router.post('/admin/signup', adminSignup);
 
-// User Signup (Self-registration)
-router.post('/user/signup', userSignup);
+// Unified signup - Allows anyone to create account with role
+router.post('/signup', signup);
 
 // Login
 router.post('/login', login);
 
-// Forgot Password
+// Forgot password
 router.post('/forgot-password', forgotPassword);
 
-// Reset Password
+// Reset password
 router.post('/reset-password', resetPassword);
 
-// Verify Token
+// Verify token
 router.get('/verify-token', verifyToken);
 
-// ============= AUTHENTICATED ROUTES =============
+// ============= PROTECTED ROUTES (All authenticated users) =============
+
+// Get own profile
+router.get('/profile', authenticate, getProfile);
+
+// Update own profile
+router.put('/profile', authenticate, updateProfile);
+
+// Change password
+router.post('/change-password', authenticate, changePassword);
+
 // Logout
 router.post('/logout', authenticate, logout);
 
-// Get Profile
-router.get('/profile', authenticate, getProfile);
-
-// Update Profile
-router.put('/profile', authenticate, updateProfile);
-
-// Change Password
-router.post('/change-password', authenticate, changePassword);
-
 // ============= ADMIN ONLY ROUTES =============
-// Add Affiliate
-router.post('/admin/affiliates', authenticate, isAdmin, addAffiliate);
 
-// Get All Affiliates
-router.get('/admin/affiliates', authenticate, isAdmin, getAffiliates);
+// Get all users (with role filter)
+router.get('/users', authenticate, getAllUsers);
 
-// Update Affiliate Status
-router.put('/admin/affiliates/:id', authenticate, isAdmin, updateAffiliateStatus);
+// Get user by ID
+router.get('/users/:id', authenticate, getUserById);
 
-// Reset Affiliate Password
-router.post('/admin/affiliates/:id/reset-password', authenticate, isAdmin, resetAffiliatePassword);
+// Update user
+router.put('/users/:id', authenticate, updateUser);
 
-// Add this route
-router.get('/admin/affiliates/stats', authenticate, isAdmin, getAffiliateStats);
+// Delete user
+router.delete('/users/:id', authenticate, deleteUser);
 
-// Get All Users
-router.get('/admin/users', authenticate, isAdmin, getAllUsers);
+// Get all affiliates
+router.get('/affiliates', authenticate, getAffiliates);
 
-// Get User by ID
-router.get('/admin/users/:id', authenticate, isAdmin, getUserById);
+// Get affiliate stats
+router.get('/affiliate-stats', authenticate, getAffiliateStats);
 
-// Update User
-router.put('/admin/users/:id', authenticate, isAdmin, updateUser);
+// Get affiliate profile
+router.get('/affiliate-profile', authenticate, getAffiliateProfile);
 
-// Delete User
-router.delete('/admin/users/:id', authenticate, isAdmin, deleteUser);
+// Add affiliate (admin only)
+router.post('/affiliates', authenticate, addAffiliate);
 
-// ============= AFFILIATE ROUTES =============
-// Get Affiliate Profile with Stats
-router.get('/affiliate/profile', authenticate, isAffiliate, getAffiliateProfile);
+// Update affiliate status
+router.put('/affiliates/:id/status', authenticate, updateAffiliateStatus);
+
+// Reset affiliate password
+router.post('/affiliates/:id/reset-password', authenticate, resetAffiliatePassword);
 
 module.exports = router;

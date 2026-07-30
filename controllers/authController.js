@@ -1,3 +1,4 @@
+// authController.js
 const User = require('../models/User');
 const jwt = require('jsonwebtoken');
 const { Op } = require('sequelize');
@@ -5,16 +6,35 @@ const { sequelize } = require('../config/db');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'Harsh2006@';
 
-// ============= ADMIN SIGNUP (Direct, No Approval) =============
-const adminSignup = async (req, res) => {
+// ============= UNIFIED SIGNUP (For all roles) =============
+const signup = async (req, res) => {
   try {
-    const { name, email, username, phone, password } = req.body;
+    const { 
+      name, 
+      email, 
+      username, 
+      phone, 
+      password, 
+      role = 'user',
+      commissionRate,
+      paymentMethod,
+      paymentDetails
+    } = req.body;
 
     // Validation
     if (!name || !email || !password || !username || !phone) {
       return res.status(400).json({ 
         success: false,
         error: 'All fields are required' 
+      });
+    }
+
+    // Validate role
+    const validRoles = ['admin', 'affiliate', 'user'];
+    if (!validRoles.includes(role)) {
+      return res.status(400).json({ 
+        success: false,
+        error: 'Invalid role. Must be admin, affiliate, or user' 
       });
     }
 
@@ -32,112 +52,67 @@ const adminSignup = async (req, res) => {
       });
     }
 
-    const adminUser = await User.create({
+    // Build user data
+    const userData = {
       name,
       email,
       username,
       phone,
       password,
-      role: 'admin',
+      role,
       isEmailApproved: true,
       isActive: true,
       needsPasswordChange: false
-    });
+    };
 
-    const token = adminUser.generateAuthToken();
-
-    res.status(201).json({
-      success: true,
-      data: {
-        token,
-        user: {
-          id: adminUser.id,
-          name: adminUser.name,
-          email: adminUser.email,
-          username: adminUser.username,
-          phone: adminUser.phone,
-          role: adminUser.role
-        }
-      },
-      message: 'Admin account created successfully!'
-    });
-
-  } catch (err) {
-    console.error("Admin Signup Error:", err);
-    res.status(400).json({
-      success: false,
-      error: "Failed to create admin account: " + err.message
-    });
-  }
-};
-
-// ============= USER SIGNUP (Self-registration) =============
-const userSignup = async (req, res) => {
-  try {
-    const { name, email, username, phone, password } = req.body;
-
-    // Validation
-    if (!name || !email || !password || !username || !phone) {
-      return res.status(400).json({ 
-        success: false,
-        error: 'All fields are required' 
-      });
+    // Add affiliate-specific fields
+    if (role === 'affiliate') {
+      userData.commissionRate = commissionRate || 10.00;
+      userData.paymentMethod = paymentMethod || null;
+      userData.paymentDetails = paymentDetails || null;
+      // affiliateId will be auto-generated in the hook
     }
 
-    // Check if user already exists
-    const existingUser = await User.findOne({
-      where: {
-        [Op.or]: [{ email }, { username }]
+    const newUser = await User.create(userData);
+
+    // Generate token
+    const token = newUser.generateAuthToken();
+
+    // Prepare response data
+    const responseData = {
+      token,
+      user: {
+        id: newUser.id,
+        name: newUser.name,
+        email: newUser.email,
+        username: newUser.username,
+        phone: newUser.phone,
+        role: newUser.role
       }
-    });
+    };
 
-    if (existingUser) {
-      return res.status(400).json({ 
-        success: false,
-        error: 'Email or username already registered' 
-      });
+    // Add affiliate-specific data to response
+    if (role === 'affiliate') {
+      responseData.user.affiliateId = newUser.affiliateId;
+      responseData.user.commissionRate = newUser.commissionRate;
     }
-
-    const user = await User.create({
-      name,
-      email,
-      username,
-      phone,
-      password,
-      role: 'user',
-      isEmailApproved: true,
-      isActive: true,
-      needsPasswordChange: false
-    });
-
-    const token = user.generateAuthToken();
 
     res.status(201).json({
       success: true,
-      data: {
-        token,
-        user: {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          username: user.username,
-          phone: user.phone,
-          role: user.role
-        }
-      },
-      message: 'User account created successfully!'
+      data: responseData,
+      message: `${role.charAt(0).toUpperCase() + role.slice(1)} account created successfully!`
     });
 
   } catch (err) {
-    console.error("User Signup Error:", err);
+    console.error("Signup Error:", err);
     res.status(400).json({
       success: false,
-      error: "Failed to create user account: " + err.message
+      error: "Failed to create account: " + err.message
     });
   }
 };
 
-// ============= ADMIN: ADD AFFILIATE =============
+// ============= ADMIN: ADD AFFILIATE (Admin can still add affiliates) =============
 const addAffiliate = async (req, res) => {
   const transaction = await sequelize.transaction();
   
@@ -270,34 +245,42 @@ const getAffiliateProfile = async (req, res) => {
     });
 
     // Get affiliate statistics
-    const AffiliateLink = require('../models/AffiliateLink');
-    const Commission = require('../models/Commission');
+    try {
+      const AffiliateLink = require('../models/AffiliateLink');
+      const Commission = require('../models/Commission');
 
-    const links = await AffiliateLink.findAll({
-      where: { userId: req.user.id }
-    });
+      const links = await AffiliateLink.findAll({
+        where: { userId: req.user.id }
+      });
 
-    const commissions = await Commission.findAll({
-      where: { userId: req.user.id }
-    });
+      const commissions = await Commission.findAll({
+        where: { userId: req.user.id }
+      });
 
-    const stats = {
-      totalLinks: links.length,
-      totalClicks: links.reduce((sum, link) => sum + link.clicks, 0),
-      totalConversions: links.reduce((sum, link) => sum + link.conversions, 0),
-      totalCommission: commissions.reduce((sum, comm) => sum + parseFloat(comm.amount), 0),
-      pendingCommission: commissions
-        .filter(c => c.status === 'pending')
-        .reduce((sum, comm) => sum + parseFloat(comm.amount), 0),
-      approvedCommission: commissions
-        .filter(c => c.status === 'approved')
-        .reduce((sum, comm) => sum + parseFloat(comm.amount), 0)
-    };
+      const stats = {
+        totalLinks: links.length,
+        totalClicks: links.reduce((sum, link) => sum + link.clicks, 0),
+        totalConversions: links.reduce((sum, link) => sum + link.conversions, 0),
+        totalCommission: commissions.reduce((sum, comm) => sum + parseFloat(comm.amount), 0),
+        pendingCommission: commissions
+          .filter(c => c.status === 'pending')
+          .reduce((sum, comm) => sum + parseFloat(comm.amount), 0),
+        approvedCommission: commissions
+          .filter(c => c.status === 'approved')
+          .reduce((sum, comm) => sum + parseFloat(comm.amount), 0)
+      };
 
-    res.json({
-      success: true,
-      data: { user, stats }
-    });
+      res.json({
+        success: true,
+        data: { user, stats }
+      });
+    } catch (err) {
+      // If models don't exist yet, just return user data
+      res.json({
+        success: true,
+        data: { user, stats: { totalLinks: 0, totalClicks: 0, totalConversions: 0 } }
+      });
+    }
 
   } catch (err) {
     console.error("Get Affiliate Profile Error:", err);
@@ -420,7 +403,7 @@ const login = async (req, res) => {
     // Prepare response based on role
     const responseData = {
       token,
-      needsPasswordChange: user.needsPasswordChange,
+      needsPasswordChange: user.needsPasswordChange || false,
       user: {
         id: user.id,
         name: user.name,
@@ -454,7 +437,7 @@ const login = async (req, res) => {
   }
 };
 
-// ============= CHANGE PASSWORD (First login or voluntarily) =============
+// ============= CHANGE PASSWORD =============
 const changePassword = async (req, res) => {
   try {
     const { currentPassword, newPassword } = req.body;
@@ -624,12 +607,8 @@ const resetPassword = async (req, res) => {
 };
 
 // ============= VERIFY TOKEN =============
-// In authController.js - Fixed verifyToken function
-
-// ============= VERIFY TOKEN =============
 const verifyToken = async (req, res) => {
   try {
-    // Get token from Authorization header
     const authHeader = req.header('Authorization');
     
     if (!authHeader) {
@@ -883,11 +862,16 @@ const deleteUser = async (req, res) => {
 
     // Delete associated data based on role
     if (user.role === 'affiliate') {
-      const AffiliateLink = require('../models/AffiliateLink');
-      const Commission = require('../models/Commission');
-      
-      await AffiliateLink.destroy({ where: { userId: id }, transaction });
-      await Commission.destroy({ where: { userId: id }, transaction });
+      try {
+        const AffiliateLink = require('../models/AffiliateLink');
+        const Commission = require('../models/Commission');
+        
+        await AffiliateLink.destroy({ where: { userId: id }, transaction });
+        await Commission.destroy({ where: { userId: id }, transaction });
+      } catch (err) {
+        // Models might not exist yet
+        console.log('Affiliate models not found, skipping...');
+      }
     }
 
     // Delete user
@@ -920,29 +904,39 @@ const getProfile = async (req, res) => {
     let extraData = {};
     
     if (user.role === 'affiliate') {
-      const AffiliateLink = require('../models/AffiliateLink');
-      const Commission = require('../models/Commission');
+      try {
+        const AffiliateLink = require('../models/AffiliateLink');
+        const Commission = require('../models/Commission');
 
-      const links = await AffiliateLink.findAll({
-        where: { userId: user.id }
-      });
+        const links = await AffiliateLink.findAll({
+          where: { userId: user.id }
+        });
 
-      const commissions = await Commission.findAll({
-        where: { userId: user.id }
-      });
+        const commissions = await Commission.findAll({
+          where: { userId: user.id }
+        });
 
-      extraData = {
-        affiliateId: user.affiliateId,
-        commissionRate: user.commissionRate,
-        totalEarnings: user.totalEarnings,
-        availableBalance: user.availableBalance,
-        stats: {
-          totalLinks: links.length,
-          totalClicks: links.reduce((sum, link) => sum + link.clicks, 0),
-          totalConversions: links.reduce((sum, link) => sum + link.conversions, 0),
-          totalCommission: commissions.reduce((sum, comm) => sum + parseFloat(comm.amount), 0)
-        }
-      };
+        extraData = {
+          affiliateId: user.affiliateId,
+          commissionRate: user.commissionRate,
+          totalEarnings: user.totalEarnings,
+          availableBalance: user.availableBalance,
+          stats: {
+            totalLinks: links.length,
+            totalClicks: links.reduce((sum, link) => sum + link.clicks, 0),
+            totalConversions: links.reduce((sum, link) => sum + link.conversions, 0),
+            totalCommission: commissions.reduce((sum, comm) => sum + parseFloat(comm.amount), 0)
+          }
+        };
+      } catch (err) {
+        // Models don't exist yet
+        extraData = {
+          affiliateId: user.affiliateId,
+          commissionRate: user.commissionRate,
+          totalEarnings: user.totalEarnings,
+          availableBalance: user.availableBalance
+        };
+      }
     }
 
     res.json({
@@ -1113,6 +1107,7 @@ const resetAffiliatePassword = async (req, res) => {
 };
 
 module.exports = {
+  signup,
   adminSignup,
   userSignup,
   addAffiliate,

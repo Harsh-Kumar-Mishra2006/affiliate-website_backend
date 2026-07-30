@@ -1,8 +1,8 @@
+// User.js
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/db');
 const bcrypt = require('bcryptjs');
-const Product= require('./Product');
-
+const Product = require('./Product');
 
 const User = sequelize.define('User', {
   id: {
@@ -73,11 +73,12 @@ const User = sequelize.define('User', {
     references: {
       model: 'users',
       key: 'id'
-    }
+    },
+    allowNull: true
   },
   needsPasswordChange: {
     type: DataTypes.BOOLEAN,
-    defaultValue: true
+    defaultValue: false
   },
   // Affiliate specific fields
   affiliateId: {
@@ -110,6 +111,10 @@ const User = sequelize.define('User', {
     beforeCreate: async (user) => {
       if (user.password) {
         user.password = await bcrypt.hash(user.password, 10);
+      }
+      // Generate affiliateId for affiliates
+      if (user.role === 'affiliate' && !user.affiliateId) {
+        user.affiliateId = User.generateAffiliateId(user.name);
       }
     },
     beforeUpdate: async (user) => {
