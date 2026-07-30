@@ -4,7 +4,7 @@ const Category = require('../models/Category');
 const User = require('../models/User');
 const { Op } = require('sequelize');
 const { sequelize } = require('../config/db');
-const { cloudinaryUtils } = require('../config/cloudinary');
+const { cloudinaryUtils } = require('../config/Cloudinary');
 
 // ============= ADD PRODUCT (Admin & Affiliate) =============
 const addProduct = async (req, res) => {
