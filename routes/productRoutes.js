@@ -2,7 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const authenticate = require('../middlewares/auth');
-const { isAdmin, isAffiliate, isAdminOrAffiliate } = require('../middlewares/roleCheck');
+const { isAdmin, isAffiliate, isUser } = require('../middlewares/roleCheck');
 const { upload } = require('../config/cloudinary');
 
 const {
@@ -36,9 +36,10 @@ router.get('/affiliate/products', authenticate, isAffiliate, getAffiliateProduct
 // ============= ADMIN & AFFILIATE ROUTES (Product Management) =============
 
 // Add a product (Admin & Affiliate with image upload)
+// Note: isAffiliate already allows 'affiliate' and 'admin' roles
 router.post('/products', 
   authenticate, 
-  isAdminOrAffiliate,
+  isAffiliate, // This allows both admin and affiliate
   upload.array('images', 10), // Allow up to 10 images
   addProduct
 );
@@ -46,26 +47,23 @@ router.post('/products',
 // Update a product (Admin & Affiliate with image upload)
 router.put('/products/:id', 
   authenticate, 
-  isAdminOrAffiliate,
+  isAffiliate, // Allows both admin and affiliate
   upload.array('images', 10),
   updateProduct
 );
 
-// Delete a product (Admin only)
-router.delete('/products/:id', authenticate, isAdmin, deleteProduct);
-
 // ============= ADMIN ONLY ROUTES =============
 
-// Bulk upload products
+// Bulk upload products (Admin only)
 router.post('/products/bulk', authenticate, isAdmin, bulkUploadProducts);
 
 // Get all products (including inactive) - Admin view
 router.get('/admin/products', authenticate, isAdmin, getAdminProducts);
 
-// Get products with commission info
+// Get products with commission info (Admin only)
 router.get('/admin/products/commission', authenticate, isAdmin, getAdminProductsWithCommission);
 
-// Get product statistics
+// Get product statistics (Admin only)
 router.get('/products/stats', authenticate, isAdmin, getProductStats);
 
 // Delete a product (Admin only)
