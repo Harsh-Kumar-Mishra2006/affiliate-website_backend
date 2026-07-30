@@ -1,3 +1,4 @@
+// models/Product.js
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/db');
 
@@ -68,7 +69,8 @@ const Product = sequelize.define('Product', {
     defaultValue: 0
   },
   affiliateUrl: {
-    type: DataTypes.STRING(500)
+    type: DataTypes.STRING(500),
+    allowNull: true
   },
   isActive: {
     type: DataTypes.BOOLEAN,
@@ -99,11 +101,37 @@ const Product = sequelize.define('Product', {
       key: 'id'
     }
   },
+  addedByRole: {
+    type: DataTypes.ENUM('admin', 'affiliate'),
+    allowNull: true
+  },
+  commissionRate: {
+    type: DataTypes.DECIMAL(5, 2),
+    allowNull: true,
+    validate: {
+      min: 10,
+      max: 25
+    }
+  },
+  affiliateEmail: {
+    type: DataTypes.STRING(100),
+    allowNull: true
+  },
   purchaseCount: {
     type: DataTypes.INTEGER,
     defaultValue: 0
   },
   totalRevenue: {
+    type: DataTypes.DECIMAL(10, 2),
+    defaultValue: 0.00
+  },
+  // Track commissions earned from this product
+  totalCommissionEarned: {
+    type: DataTypes.DECIMAL(10, 2),
+    defaultValue: 0.00
+  },
+  // Admin's share (for affiliate products)
+  adminCommissionShare: {
     type: DataTypes.DECIMAL(10, 2),
     defaultValue: 0.00
   }

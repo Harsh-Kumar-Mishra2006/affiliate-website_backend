@@ -1,7 +1,9 @@
+// routes/productRoutes.js
 const express = require('express');
 const router = express.Router();
-const  authenticate  = require('../middlewares/auth');  // ✅ FIXED: Destructure
-const { isAdmin } = require('../middlewares/roleCheck');
+const authenticate = require('../middlewares/auth');
+const { isAdmin, isAffiliate, isAdminOrAffiliate } = require('../middlewares/roleCheck');
+const { upload } = require('../config/cloudinary');
 
 const {
   addProduct,
@@ -14,7 +16,9 @@ const {
   getFeaturedProducts,
   getProductStats,
   bulkUploadProducts,
-  getAdminProducts
+  getAdminProducts,
+  getAffiliateProducts,
+  getAdminProductsWithCommission
 } = require('../controllers/productController');
 
 // ============= PUBLIC ROUTES (Anyone can view) =============
@@ -24,25 +28,47 @@ router.get('/products/featured', getFeaturedProducts);
 router.get('/products/category/:categorySlug', getProductsByCategory);
 router.get('/products/:id', getProductById);
 
-// ============= ADMIN ONLY ROUTES (Product Management) =============
-// ✅ All these routes require: Authentication + Admin role
+// ============= AUTHENTICATED ROUTES =============
 
-// Add a single product
-router.post('/products', authenticate, isAdmin, addProduct);
+// Affiliate: Get their own products
+router.get('/affiliate/products', authenticate, isAffiliate, getAffiliateProducts);
 
-// Bulk upload multiple products
+// ============= ADMIN & AFFILIATE ROUTES (Product Management) =============
+
+// Add a product (Admin & Affiliate with image upload)
+router.post('/products', 
+  authenticate, 
+  isAdminOrAffiliate,
+  upload.array('images', 10), // Allow up to 10 images
+  addProduct
+);
+
+// Update a product (Admin & Affiliate with image upload)
+router.put('/products/:id', 
+  authenticate, 
+  isAdminOrAffiliate,
+  upload.array('images', 10),
+  updateProduct
+);
+
+// Delete a product (Admin only)
+router.delete('/products/:id', authenticate, isAdmin, deleteProduct);
+
+// ============= ADMIN ONLY ROUTES =============
+
+// Bulk upload products
 router.post('/products/bulk', authenticate, isAdmin, bulkUploadProducts);
 
-// Get all products (including inactive ones) - Admin view
+// Get all products (including inactive) - Admin view
 router.get('/admin/products', authenticate, isAdmin, getAdminProducts);
+
+// Get products with commission info
+router.get('/admin/products/commission', authenticate, isAdmin, getAdminProductsWithCommission);
 
 // Get product statistics
 router.get('/products/stats', authenticate, isAdmin, getProductStats);
 
-// Update a product
-router.put('/products/:id', authenticate, isAdmin, updateProduct);
-
-// Delete a product
+// Delete a product (Admin only)
 router.delete('/products/:id', authenticate, isAdmin, deleteProduct);
 
 module.exports = router;
