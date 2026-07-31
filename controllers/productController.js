@@ -14,7 +14,7 @@ const addProduct = async (req, res) => {
     const userRole = req.user.role;
     const userId = req.user.id;
 
-    // Role check is already done in middleware, but we keep this for extra safety
+    // Role check
     if (userRole !== 'admin' && userRole !== 'affiliate') {
       return res.status(403).json({
         success: false,
@@ -39,7 +39,7 @@ const addProduct = async (req, res) => {
       specifications,
       metaTitle,
       metaDescription,
-      commissionRate // For affiliate only
+      commissionRate
     } = req.body;
 
     // Validate required fields
@@ -50,7 +50,7 @@ const addProduct = async (req, res) => {
       });
     }
 
-    // Check if product with same productId exists
+    // Check if product exists
     const existingProduct = await Product.findOne({
       where: { 
         [Op.or]: [
@@ -132,7 +132,6 @@ const addProduct = async (req, res) => {
 
     // Affiliate-specific fields
     if (userRole === 'affiliate') {
-      // Affiliate must provide affiliate URL
       if (!affiliateUrl) {
         return res.status(400).json({
           success: false,
@@ -140,8 +139,7 @@ const addProduct = async (req, res) => {
         });
       }
 
-      // Validate commission rate
-      let finalCommissionRate = 10.00; // Default
+      let finalCommissionRate = 10.00;
       if (commissionRate) {
         const rate = parseFloat(commissionRate);
         if (rate >= 10 && rate <= 25) {
@@ -157,9 +155,8 @@ const addProduct = async (req, res) => {
       productData.affiliateUrl = affiliateUrl;
       productData.commissionRate = finalCommissionRate;
       productData.affiliateEmail = req.user.email;
-      productData.adminCommissionShare = finalCommissionRate; // Admin gets the commission
+      productData.adminCommissionShare = finalCommissionRate;
     } else {
-      // Admin doesn't need affiliate URL
       productData.affiliateUrl = null;
       productData.commissionRate = null;
       productData.affiliateEmail = null;
@@ -167,10 +164,9 @@ const addProduct = async (req, res) => {
     }
 
     const product = await Product.create(productData, { transaction });
-
     await transaction.commit();
 
-    // Fetch complete product with associations
+    // Fetch complete product
     const completeProduct = await Product.findByPk(product.id, {
       include: [
         {
@@ -186,7 +182,6 @@ const addProduct = async (req, res) => {
       ]
     });
 
-    // Prepare response message
     let message = 'Product added successfully!';
     if (userRole === 'affiliate') {
       message = `Product added successfully with ${completeProduct.commissionRate}% commission rate. Admin will receive this commission.`;
@@ -207,6 +202,7 @@ const addProduct = async (req, res) => {
     });
   }
 };
+
 
 // ============= GET ALL PRODUCTS (Public) =============
 const getAllProducts = async (req, res) => {
@@ -397,19 +393,11 @@ const updateProduct = async (req, res) => {
       });
     }
 
-    // Check permissions: Affiliate can only update their own products
+    // Check permissions
     if (userRole === 'affiliate' && product.addedBy !== userId) {
       return res.status(403).json({
         success: false,
         error: 'You can only update products you added'
-      });
-    }
-
-    // Role check is already done in middleware
-    if (userRole !== 'admin' && userRole !== 'affiliate') {
-      return res.status(403).json({
-        success: false,
-        error: 'Access denied. Only Admin and Affiliate can update products.'
       });
     }
 
@@ -432,10 +420,11 @@ const updateProduct = async (req, res) => {
       metaDescription,
       isActive,
       isFeatured,
-      commissionRate // Only for affiliate
+      commissionRate,
+      removeImages // Array of image URLs to remove
     } = req.body;
 
-    // Update category if provided
+    // Update category
     let categoryId = product.categoryId;
     if (category) {
       let categoryRecord = await Category.findOne({
@@ -457,12 +446,23 @@ const updateProduct = async (req, res) => {
       categoryId = categoryRecord.id;
     }
 
-    // Handle new image uploads
+    // Handle image updates
     let imageUrls = product.images || [];
     let mainImageUrl = product.mainImage;
 
+    // Remove selected images
+    if (removeImages && removeImages.length > 0) {
+      imageUrls = imageUrls.filter(url => !removeImages.includes(url));
+      
+      // If main image was removed, set new main image
+      if (removeImages.includes(mainImageUrl)) {
+        mainImageUrl = imageUrls.length > 0 ? imageUrls[0] : null;
+      }
+    }
+
+    // Upload new images
     if (req.files && req.files.length > 0) {
-      const slug = product.slug || name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+      const slug = product.slug || name?.toLowerCase().replace(/[^a-z0-9]+/g, '-') || 'product';
       const uploadPromises = req.files.map(file => 
         cloudinaryUtils.uploadImage(file.path, {
           folder: `products/${slug}`,
@@ -473,8 +473,8 @@ const updateProduct = async (req, res) => {
       const uploadResults = await Promise.all(uploadPromises);
       const newImages = uploadResults.map(result => result.secure_url);
       imageUrls = [...imageUrls, ...newImages];
-      if (!mainImageUrl) {
-        mainImageUrl = newImages[0];
+      if (!mainImageUrl && imageUrls.length > 0) {
+        mainImageUrl = imageUrls[0];
       }
     }
 
@@ -500,7 +500,7 @@ const updateProduct = async (req, res) => {
     if (isActive !== undefined) updateData.isActive = isActive;
     if (isFeatured !== undefined) updateData.isFeatured = isFeatured;
 
-    // Update images if new ones were uploaded
+    // Update images
     if (imageUrls.length > 0) {
       updateData.images = imageUrls;
       if (mainImageUrl) {
