@@ -1,3 +1,4 @@
+// models/Purchase.js
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/db');
 
@@ -52,6 +53,7 @@ const Purchase = sequelize.define('Purchase', {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: false
   },
+  // Commission tracking
   commissionAmount: {
     type: DataTypes.DECIMAL(10, 2),
     defaultValue: 0.00
@@ -60,13 +62,23 @@ const Purchase = sequelize.define('Purchase', {
     type: DataTypes.DECIMAL(5, 2),
     defaultValue: 0.00
   },
+  adminCommissionAmount: {
+    type: DataTypes.DECIMAL(10, 2),
+    defaultValue: 0.00
+  },
+  adminCommissionRate: {
+    type: DataTypes.DECIMAL(5, 2),
+    defaultValue: 0.00
+  },
   status: {
     type: DataTypes.ENUM('pending', 'paid', 'completed', 'cancelled'),
     defaultValue: 'pending'
   },
+  // Payment screenshot with Cloudinary data
   paymentScreenshot: {
     type: DataTypes.JSON,
-    allowNull: true
+    allowNull: true,
+    defaultValue: null
   },
   paymentStatus: {
     type: DataTypes.ENUM('pending', 'verified', 'rejected'),

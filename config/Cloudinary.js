@@ -1,4 +1,4 @@
-// config/Cloudinary.js
+// config/cloudinary.js
 const cloudinary = require('cloudinary').v2;
 const { CloudinaryStorage } = require('multer-storage-cloudinary');
 const multer = require('multer');
@@ -10,8 +10,8 @@ cloudinary.config({
   api_secret: process.env.CLOUDINARY_API_SECRET,
 });
 
-// Configure Cloudinary Storage for Multer
-const storage = new CloudinaryStorage({
+// Configure Cloudinary Storage for Products
+const productStorage = new CloudinaryStorage({
   cloudinary: cloudinary,
   params: {
     folder: 'products',
@@ -24,9 +24,23 @@ const storage = new CloudinaryStorage({
   },
 });
 
-// Multer upload middleware
-const upload = multer({
-  storage: storage,
+// Configure Cloudinary Storage for Payment Screenshots
+const paymentStorage = new CloudinaryStorage({
+  cloudinary: cloudinary,
+  params: {
+    folder: 'payments',
+    allowed_formats: ['jpg', 'jpeg', 'png', 'gif', 'webp', 'pdf'],
+    transformation: [
+      { width: 1200, height: 1200, crop: 'limit' },
+      { quality: 'auto' },
+      { fetch_format: 'auto' }
+    ],
+  },
+});
+
+// Multer upload middleware for products
+const uploadProduct = multer({
+  storage: productStorage,
   limits: {
     fileSize: 5 * 1024 * 1024, // 5MB limit
   },
@@ -42,13 +56,31 @@ const upload = multer({
   },
 });
 
+// Multer upload middleware for payments
+const uploadPayment = multer({
+  storage: paymentStorage,
+  limits: {
+    fileSize: 10 * 1024 * 1024, // 10MB limit for payment screenshots
+  },
+  fileFilter: (req, file, cb) => {
+    const allowedTypes = /jpeg|jpg|png|gif|webp|pdf/;
+    const extname = allowedTypes.test(file.originalname.toLowerCase());
+    const mimetype = allowedTypes.test(file.mimetype);
+    
+    if (mimetype && extname) {
+      return cb(null, true);
+    }
+    cb(new Error('Only image and PDF files are allowed!'));
+  },
+});
+
 // Cloudinary utility functions
 const cloudinaryUtils = {
   // Upload single image
   uploadImage: async (filePath, options = {}) => {
     try {
       const result = await cloudinary.uploader.upload(filePath, {
-        folder: 'products',
+        folder: options.folder || 'products',
         ...options
       });
       return result;
@@ -63,7 +95,7 @@ const cloudinaryUtils = {
     try {
       const uploadPromises = files.map(file => 
         cloudinary.uploader.upload(file.path, {
-          folder: 'products',
+          folder: options.folder || 'products',
           ...options
         })
       );
@@ -71,6 +103,20 @@ const cloudinaryUtils = {
       return results;
     } catch (error) {
       console.error('Cloudinary multiple upload error:', error);
+      throw error;
+    }
+  },
+
+  // Upload payment screenshot
+  uploadPaymentScreenshot: async (filePath, options = {}) => {
+    try {
+      const result = await cloudinary.uploader.upload(filePath, {
+        folder: 'payments',
+        ...options
+      });
+      return result;
+    } catch (error) {
+      console.error('Cloudinary payment upload error:', error);
       throw error;
     }
   },
@@ -102,6 +148,8 @@ const cloudinaryUtils = {
 module.exports = {
   cloudinary,
   cloudinaryUtils,
-  upload,
-  storage
+  uploadProduct,
+  uploadPayment,
+  productStorage,
+  paymentStorage
 };

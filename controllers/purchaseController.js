@@ -1,9 +1,11 @@
+// controllers/purchaseController.js
 const Purchase = require('../models/Purchase');
 const Product = require('../models/Product');
 const User = require('../models/User');
 const Commission = require('../models/CommissionModel');
 const { sequelize } = require('../config/db');
 const { Op } = require('sequelize');
+const { cloudinaryUtils } = require('../config/cloudinary');
 
 // Generate unique order ID
 const generateOrderId = () => {
@@ -35,8 +37,17 @@ const initiatePurchase = async (req, res) => {
       });
     }
 
-    // Get product
-    const product = await Product.findByPk(productId);
+    // Get product with affiliate info
+    const product = await Product.findByPk(productId, {
+      include: [
+        {
+          model: User,
+          as: 'addedByUser',
+          attributes: ['id', 'name', 'email', 'role']
+        }
+      ]
+    });
+    
     if (!product) {
       return res.status(404).json({
         success: false,
@@ -63,12 +74,29 @@ const initiatePurchase = async (req, res) => {
     const price = product.discountedPrice || product.price;
     const totalAmount = price * quantity;
 
-    // Find affiliate for this product (the one who added it)
-    const affiliate = await User.findByPk(product.addedBy);
-    
-    // Generate random commission rate between 10-25%
-    const commissionRate = parseFloat((10 + Math.random() * 15).toFixed(2));
-    const commissionAmount = parseFloat((totalAmount * (commissionRate / 100)).toFixed(2));
+    // Determine commission structure based on who added the product
+    let affiliateId = null;
+    let commissionRate = 0;
+    let adminCommissionRate = 0;
+    let affiliateCommissionAmount = 0;
+    let adminCommissionAmount = 0;
+
+    if (product.addedByRole === 'affiliate') {
+      // Product added by affiliate - split commission
+      affiliateId = product.addedBy;
+      commissionRate = parseFloat(product.commissionRate) || 10.00; // Affiliate's commission rate
+      adminCommissionRate = parseFloat(100 - commissionRate); // Admin gets the rest
+      
+      affiliateCommissionAmount = parseFloat((totalAmount * (commissionRate / 100)).toFixed(2));
+      adminCommissionAmount = parseFloat((totalAmount * (adminCommissionRate / 100)).toFixed(2));
+    } else {
+      // Product added by admin - all commission goes to admin
+      affiliateId = null;
+      commissionRate = 0;
+      adminCommissionRate = 100;
+      affiliateCommissionAmount = 0;
+      adminCommissionAmount = parseFloat(totalAmount);
+    }
 
     // Generate order ID
     const orderId = generateOrderId();
@@ -77,14 +105,16 @@ const initiatePurchase = async (req, res) => {
     const purchase = await Purchase.create({
       userId: req.user.id,
       productId: product.id,
-      affiliateId: product.addedBy,
+      affiliateId: affiliateId,
       orderId,
       productName: product.name,
       productPrice: price,
       quantity,
       totalAmount,
-      commissionAmount,
-      commissionRate,
+      commissionAmount: affiliateCommissionAmount,
+      commissionRate: commissionRate,
+      adminCommissionAmount: adminCommissionAmount,
+      adminCommissionRate: adminCommissionRate,
       status: 'pending',
       paymentStatus: 'pending',
       buyerName,
@@ -102,6 +132,29 @@ const initiatePurchase = async (req, res) => {
 
     await transaction.commit();
 
+    // Prepare payment instructions based on product owner
+    const paymentInstructions = {
+      upiId: 'affiliatesarthi@pay',
+      bankDetails: {
+        bankName: 'AffiliateSarthi Bank',
+        accountNumber: '1234567890',
+        ifscCode: 'ASB0001234',
+        accountHolder: 'AffiliateSarthi Pvt Ltd'
+      },
+      amount: totalAmount,
+      orderId: orderId
+    };
+
+    // If product is from affiliate, show affiliate info
+    if (product.addedByRole === 'affiliate') {
+      paymentInstructions.affiliateInfo = {
+        name: product.addedByUser?.name || 'Affiliate',
+        email: product.addedByUser?.email || '',
+        commissionRate: commissionRate,
+        commissionAmount: affiliateCommissionAmount
+      };
+    }
+
     res.status(201).json({
       success: true,
       data: {
@@ -109,17 +162,10 @@ const initiatePurchase = async (req, res) => {
         orderId,
         totalAmount,
         commissionRate,
-        commissionAmount,
-        paymentInstructions: {
-          upiId: 'affiliatesarthi@pay',
-          bankDetails: {
-            bankName: 'AffiliateSarthi Bank',
-            accountNumber: '1234567890',
-            ifscCode: 'ASB0001234',
-            accountHolder: 'AffiliateSarthi Pvt Ltd'
-          },
-          amount: totalAmount
-        }
+        commissionAmount: affiliateCommissionAmount,
+        adminCommissionAmount: adminCommissionAmount,
+        productOwner: product.addedByRole,
+        paymentInstructions
       },
       message: 'Purchase initiated. Please complete payment.'
     });
@@ -134,7 +180,7 @@ const initiatePurchase = async (req, res) => {
   }
 };
 
-// ============= USER: Upload Payment Screenshot =============
+// ============= USER: Upload Payment Screenshot to Cloudinary =============
 const uploadPaymentScreenshot = async (req, res) => {
   const transaction = await sequelize.transaction();
   
@@ -178,13 +224,22 @@ const uploadPaymentScreenshot = async (req, res) => {
       });
     }
 
-    // In a real implementation, you would upload to Cloudinary
-    // For now, we'll store the file info
-    const screenshotData = {
+    // Upload to Cloudinary
+    const uploadResult = await cloudinaryUtils.uploadPaymentScreenshot(file.path, {
       public_id: `payment_${orderId}`,
-      url: file.path || `/uploads/${file.filename}`,
+      folder: 'payments'
+    });
+
+    // Store screenshot data with Cloudinary info
+    const screenshotData = {
+      public_id: uploadResult.public_id,
+      url: uploadResult.secure_url,
       originalName: file.originalname,
-      size: file.size
+      size: file.size,
+      format: uploadResult.format,
+      width: uploadResult.width,
+      height: uploadResult.height,
+      uploadedAt: new Date().toISOString()
     };
 
     // Update purchase with payment screenshot
@@ -199,7 +254,10 @@ const uploadPaymentScreenshot = async (req, res) => {
 
     res.json({
       success: true,
-      data: purchase,
+      data: {
+        purchase,
+        screenshot: screenshotData
+      },
       message: 'Payment screenshot uploaded successfully. Awaiting verification.'
     });
 
@@ -226,24 +284,23 @@ const getMyPurchases = async (req, res) => {
 
     const { count, rows } = await Purchase.findAndCountAll({
       where: whereClause,
-      // include: [
-      //   {
-      //     model: Product,
-      //     attributes: ['id', 'name', 'mainImage', 'company']
-      //   },
-      //   {
-      //     model: User,
-      //     as: 'affiliate',
-      //     attributes: ['id', 'name', 'email']
-      //   }
-      // ],
+      include: [
+        {
+          model: Product,
+          attributes: ['id', 'name', 'mainImage', 'company']
+        },
+        {
+          model: User,
+          as: 'affiliate',
+          attributes: ['id', 'name', 'email']
+        }
+      ],
       order: [['createdAt', 'DESC']],
       limit: parseInt(limit),
       offset: parseInt(offset),
       distinct: true
     });
 
-    // Get summary
     const summary = {
       total: await Purchase.count({ where: { userId: req.user.id } }),
       pending: await Purchase.count({ where: { userId: req.user.id, paymentStatus: 'pending' } }),
@@ -326,7 +383,8 @@ const getAllPurchases = async (req, res) => {
       limit = 20, 
       paymentStatus,
       status,
-      search
+      search,
+      productOwner // 'admin' or 'affiliate'
     } = req.query;
     const offset = (page - 1) * limit;
 
@@ -342,13 +400,20 @@ const getAllPurchases = async (req, res) => {
       ];
     }
 
+    // Filter by product owner type
+    const productInclude = {
+      model: Product,
+      attributes: ['id', 'name', 'mainImage', 'company', 'addedBy', 'addedByRole']
+    };
+    
+    if (productOwner) {
+      productInclude.where = { addedByRole: productOwner };
+    }
+
     const { count, rows } = await Purchase.findAndCountAll({
       where: whereClause,
       include: [
-        {
-          model: Product,
-          attributes: ['id', 'name', 'mainImage', 'company']
-        },
+        productInclude,
         {
           model: User,
           as: 'user',
@@ -379,7 +444,22 @@ const getAllPurchases = async (req, res) => {
       rejected: await Purchase.count({ where: { paymentStatus: 'rejected' } }),
       completed: await Purchase.count({ where: { status: 'completed' } }),
       totalRevenue: await Purchase.sum('totalAmount'),
-      totalCommission: await Purchase.sum('commissionAmount')
+      totalCommission: await Purchase.sum('commissionAmount'),
+      totalAdminCommission: await Purchase.sum('adminCommissionAmount')
+    };
+
+    // Get commission breakdown by product owner
+    const commissionBreakdown = {
+      affiliateProducts: await Purchase.sum('commissionAmount', { 
+        where: { 
+          affiliateId: { [Op.ne]: null } 
+        } 
+      }),
+      adminProducts: await Purchase.sum('adminCommissionAmount', { 
+        where: { 
+          affiliateId: null 
+        } 
+      })
     };
 
     res.json({
@@ -387,6 +467,7 @@ const getAllPurchases = async (req, res) => {
       data: {
         purchases: rows,
         summary,
+        commissionBreakdown,
         pagination: {
           total: count,
           page: parseInt(page),
@@ -426,7 +507,7 @@ const verifyPayment = async (req, res) => {
       include: [
         {
           model: Product,
-          attributes: ['id', 'name', 'addedBy', 'price', 'discountedPrice']
+          attributes: ['id', 'name', 'addedBy', 'addedByRole', 'price', 'discountedPrice', 'commissionRate']
         },
         {
           model: User,
@@ -476,19 +557,16 @@ const verifyPayment = async (req, res) => {
 
       // === COMMISSION DISTRIBUTION LOGIC ===
       const totalAmount = parseFloat(purchase.totalAmount);
-      const affiliateRate = parseFloat(purchase.commissionRate); // Already set (10-25%)
       
-      // Calculate commissions
-      const affiliateCommission = parseFloat((totalAmount * (affiliateRate / 100)).toFixed(2));
-      
-      // Admin gets the remaining amount (75-90%)
-      const adminRate = parseFloat((100 - affiliateRate).toFixed(2));
-      const adminCommission = parseFloat((totalAmount * (adminRate / 100)).toFixed(2));
+      // Check if product was added by affiliate or admin
+      if (purchase.Product.addedByRole === 'affiliate') {
+        // Product added by affiliate - split commission
+        const affiliateRate = parseFloat(purchase.commissionRate) || 10.00;
+        const adminRate = parseFloat(100 - affiliateRate);
+        
+        const affiliateCommission = parseFloat((totalAmount * (affiliateRate / 100)).toFixed(2));
+        const adminCommission = parseFloat((totalAmount * (adminRate / 100)).toFixed(2));
 
-      // Find the admin who added the product
-      const adminUser = await User.findByPk(purchase.Product.addedBy);
-      
-      if (adminUser) {
         // Create commission record for affiliate
         const commission = await Commission.create({
           affiliateId: purchase.affiliateId,
@@ -521,6 +599,45 @@ const verifyPayment = async (req, res) => {
           });
         }
 
+        // Update admin's earnings (product owner)
+        await User.increment('totalEarnings', {
+          by: adminCommission,
+          where: { id: purchase.Product.addedBy },
+          transaction
+        });
+
+        await User.increment('availableBalance', {
+          by: adminCommission,
+          where: { id: purchase.Product.addedBy },
+          transaction
+        });
+
+        console.log(`✅ Commission Distributed (Affiliate Product):
+          - Affiliate (${purchase.affiliateId}): ${affiliateRate}% = ₹${affiliateCommission}
+          - Admin (${purchase.Product.addedBy}): ${adminRate}% = ₹${adminCommission}
+          - Total: ₹${totalAmount}
+        `);
+      } else {
+        // Product added by admin - full amount goes to admin
+        const adminCommission = totalAmount;
+
+        // Create commission record for admin
+        const commission = await Commission.create({
+          affiliateId: null,
+          adminId: purchase.Product.addedBy,
+          productId: purchase.productId,
+          purchaseId: purchase.id,
+          orderId: purchase.orderId,
+          affiliateCommissionAmount: 0,
+          affiliateCommissionRate: 0,
+          adminCommissionAmount: adminCommission,
+          adminCommissionRate: 100,
+          totalAmount: totalAmount,
+          status: 'approved',
+          paymentDate: new Date(),
+          notes: `Full commission to admin (product owner) - ₹${adminCommission}`
+        }, { transaction });
+
         // Update admin's earnings
         await User.increment('totalEarnings', {
           by: adminCommission,
@@ -534,42 +651,10 @@ const verifyPayment = async (req, res) => {
           transaction
         });
 
-        console.log(`✅ Commission Distributed:
-          - Affiliate (${purchase.affiliateId}): ${affiliateRate}% = ₹${affiliateCommission}
-          - Admin (${purchase.Product.addedBy}): ${adminRate}% = ₹${adminCommission}
+        console.log(`✅ Commission Distributed (Admin Product):
+          - Admin (${purchase.Product.addedBy}): 100% = ₹${adminCommission}
           - Total: ₹${totalAmount}
         `);
-      } else {
-        // Fallback: If no admin found, give all to affiliate
-        await Commission.create({
-          affiliateId: purchase.affiliateId,
-          adminId: null,
-          productId: purchase.productId,
-          purchaseId: purchase.id,
-          orderId: purchase.orderId,
-          affiliateCommissionAmount: totalAmount,
-          affiliateCommissionRate: 100,
-          adminCommissionAmount: 0,
-          adminCommissionRate: 0,
-          totalAmount: totalAmount,
-          status: 'approved',
-          paymentDate: new Date(),
-          notes: 'Admin not found - full commission to affiliate'
-        }, { transaction });
-
-        if (purchase.affiliateId) {
-          await User.increment('totalEarnings', {
-            by: totalAmount,
-            where: { id: purchase.affiliateId },
-            transaction
-          });
-
-          await User.increment('availableBalance', {
-            by: totalAmount,
-            where: { id: purchase.affiliateId },
-            transaction
-          });
-        }
       }
     }
 
@@ -582,8 +667,8 @@ const verifyPayment = async (req, res) => {
         commission: {
           affiliateRate: purchase.commissionRate,
           affiliateAmount: purchase.commissionAmount,
-          adminRate: 100 - parseFloat(purchase.commissionRate),
-          adminAmount: parseFloat(purchase.totalAmount) - parseFloat(purchase.commissionAmount)
+          adminRate: purchase.adminCommissionRate,
+          adminAmount: purchase.adminCommissionAmount
         }
       },
       message: `Payment ${status} successfully and commission distributed`
@@ -608,7 +693,7 @@ const getPurchaseById = async (req, res) => {
       include: [
         {
           model: Product,
-          attributes: ['id', 'name', 'mainImage', 'company', 'price']
+          attributes: ['id', 'name', 'mainImage', 'company', 'price', 'addedByRole']
         },
         {
           model: User,
@@ -655,7 +740,7 @@ const getMyCommissions = async (req, res) => {
     const { page = 1, limit = 20, status } = req.query;
     const offset = (page - 1) * limit;
 
-    const whereClause = { userId: req.user.id };
+    const whereClause = { affiliateId: req.user.id };
     if (status) whereClause.status = status;
 
     const { count, rows } = await Commission.findAndCountAll({
@@ -676,12 +761,19 @@ const getMyCommissions = async (req, res) => {
       distinct: true
     });
 
-    // Summary
     const summary = {
-      total: await Commission.sum('amount', { where: { userId: req.user.id } }),
-      approved: await Commission.sum('amount', { where: { userId: req.user.id, status: 'approved' } }),
-      paid: await Commission.sum('amount', { where: { userId: req.user.id, status: 'paid' } }),
-      pending: await Commission.sum('amount', { where: { userId: req.user.id, status: 'pending' } })
+      total: await Commission.sum('affiliateCommissionAmount', { 
+        where: { affiliateId: req.user.id } 
+      }),
+      approved: await Commission.sum('affiliateCommissionAmount', { 
+        where: { affiliateId: req.user.id, status: 'approved' } 
+      }),
+      paid: await Commission.sum('affiliateCommissionAmount', { 
+        where: { affiliateId: req.user.id, status: 'paid' } 
+      }),
+      pending: await Commission.sum('affiliateCommissionAmount', { 
+        where: { affiliateId: req.user.id, status: 'pending' } 
+      })
     };
 
     res.json({
@@ -707,224 +799,6 @@ const getMyCommissions = async (req, res) => {
   }
 };
 
-// Add this to purchaseController.js
-
-// ============= ADMIN: Get Commission Summary =============
-const getCommissionSummary = async (req, res) => {
-  try {
-    const { period = 'all' } = req.query; // 'today', 'week', 'month', 'all'
-    
-    let dateFilter = {};
-    const now = new Date();
-    
-    if (period === 'today') {
-      dateFilter = {
-        createdAt: {
-          [Op.gte]: new Date(now.setHours(0, 0, 0, 0))
-        }
-      };
-    } else if (period === 'week') {
-      const weekAgo = new Date(now);
-      weekAgo.setDate(weekAgo.getDate() - 7);
-      dateFilter = {
-        createdAt: {
-          [Op.gte]: weekAgo
-        }
-      };
-    } else if (period === 'month') {
-      const monthAgo = new Date(now);
-      monthAgo.setMonth(monthAgo.getMonth() - 1);
-      dateFilter = {
-        createdAt: {
-          [Op.gte]: monthAgo
-        }
-      };
-    }
-
-    // Get all commissions with details
-    const commissions = await Commission.findAll({
-      where: dateFilter,
-      include: [
-        {
-          model: User,
-          as: 'affiliate',
-          attributes: ['id', 'name', 'email']
-        },
-        {
-          model: User,
-          as: 'admin',
-          attributes: ['id', 'name', 'email']
-        },
-        {
-          model: Product,
-          attributes: ['id', 'name']
-        },
-        {
-          model: Purchase,
-          attributes: ['id', 'buyerName', 'buyerEmail']
-        }
-      ],
-      order: [['createdAt', 'DESC']]
-    });
-
-    // Calculate summary
-    const summary = {
-      totalCommissions: await Commission.sum('totalAmount', { 
-        where: dateFilter 
-      }),
-      totalAffiliateCommission: await Commission.sum('affiliateCommissionAmount', {
-        where: dateFilter
-      }),
-      totalAdminCommission: await Commission.sum('adminCommissionAmount', {
-        where: dateFilter
-      }),
-      totalCommissionsCount: commissions.length,
-      pendingApproval: await Commission.count({
-        where: { 
-          ...dateFilter,
-          status: 'pending'
-        }
-      }),
-      paid: await Commission.count({
-        where: { 
-          ...dateFilter,
-          status: 'paid'
-        }
-      }),
-      byAdmin: await Commission.findAll({
-        where: dateFilter,
-        attributes: [
-          'adminId',
-          [sequelize.fn('SUM', sequelize.col('adminCommissionAmount')), 'totalAdminCommission']
-        ],
-        group: ['adminId'],
-        include: [
-          {
-            model: User,
-            as: 'admin',
-            attributes: ['id', 'name', 'email']
-          }
-        ]
-      }),
-      byAffiliate: await Commission.findAll({
-        where: dateFilter,
-        attributes: [
-          'affiliateId',
-          [sequelize.fn('SUM', sequelize.col('affiliateCommissionAmount')), 'totalAffiliateCommission']
-        ],
-        group: ['affiliateId'],
-        include: [
-          {
-            model: User,
-            as: 'affiliate',
-            attributes: ['id', 'name', 'email']
-          }
-        ]
-      })
-    };
-
-    res.json({
-      success: true,
-      data: {
-        commissions,
-        summary,
-        period
-      }
-    });
-
-  } catch (err) {
-    console.error('Get Commission Summary Error:', err);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch commission summary: ' + err.message
-    });
-  }
-};
-
-// ============= AFFILIATE: Get Affiliate Commission Summary =============
-const getAffiliateCommissionSummary = async (req, res) => {
-  try {
-    const { page = 1, limit = 20, status } = req.query;
-    const offset = (page - 1) * limit;
-    const affiliateId = req.user.id;
-
-    const whereClause = { affiliateId };
-    if (status) {
-      whereClause.status = status;
-    }
-
-    const { count, rows } = await Commission.findAndCountAll({
-      where: whereClause,
-      include: [
-        {
-          model: Product,
-          attributes: ['id', 'name', 'mainImage', 'company']
-        },
-        {
-          model: User,
-          as: 'admin',
-          attributes: ['id', 'name', 'email']
-        },
-        {
-          model: Purchase,
-          attributes: ['id', 'orderId', 'buyerName', 'buyerEmail', 'createdAt']
-        }
-      ],
-      order: [['createdAt', 'DESC']],
-      limit: parseInt(limit),
-      offset: parseInt(offset),
-      distinct: true
-    });
-
-    // Enhanced summary for affiliate
-    const summary = {
-      totalCommission: await Commission.sum('affiliateCommissionAmount', { 
-        where: { affiliateId } 
-      }),
-      approvedCommission: await Commission.sum('affiliateCommissionAmount', {
-        where: { affiliateId, status: 'approved' }
-      }),
-      paidCommission: await Commission.sum('affiliateCommissionAmount', {
-        where: { affiliateId, status: 'paid' }
-      }),
-      pendingCommission: await Commission.sum('affiliateCommissionAmount', {
-        where: { affiliateId, status: 'pending' }
-      }),
-      totalOrders: await Commission.count({
-        where: { affiliateId }
-      }),
-      averageCommissionRate: await Commission.findAll({
-        where: { affiliateId },
-        attributes: [
-          [sequelize.fn('AVG', sequelize.col('affiliateCommissionRate')), 'avgRate']
-        ],
-        raw: true
-      }).then(result => result[0]?.avgRate || 0)
-    };
-
-    res.json({
-      success: true,
-      data: {
-        commissions: rows,
-        summary,
-        pagination: {
-          total: count,
-          page: parseInt(page),
-          limit: parseInt(limit),
-          totalPages: Math.ceil(count / limit)
-        }
-      }
-    });
-
-  } catch (err) {
-    console.error('Get Affiliate Commission Summary Error:', err);
-    res.status(500).json({
-      success: false,
-      error: 'Failed to fetch affiliate commission summary: ' + err.message
-    });
-  }
-};
-
 module.exports = {
   initiatePurchase,
   uploadPaymentScreenshot,
@@ -933,7 +807,5 @@ module.exports = {
   getAllPurchases,
   verifyPayment,
   getPurchaseById,
-  getMyCommissions,
-  getCommissionSummary,
-  getAffiliateCommissionSummary
+  getMyCommissions
 };
