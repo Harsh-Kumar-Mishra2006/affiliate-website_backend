@@ -3,7 +3,8 @@ const express = require('express');
 const router = express.Router();
 const authenticate = require('../middlewares/auth');
 const { isAdmin, isAffiliate } = require('../middlewares/roleCheck');
-const { upload } = require('../config/Cloudinary');
+// ✅ Fix: Import uploadProduct instead of upload
+const { uploadProduct } = require('../config/cloudinary');
 
 const {
   addProduct,
@@ -32,19 +33,19 @@ router.get('/products/:id', getProductById);
 router.get('/affiliate/products', authenticate, isAffiliate, getAffiliateProducts);
 
 // ============= ADMIN & AFFILIATE ROUTES =============
-// Add product with image upload (max 10 images)
+// ✅ Fix: Use uploadProduct instead of upload
 router.post('/products', 
   authenticate, 
   isAffiliate,
-  upload.array('images', 10),
+  uploadProduct.array('images', 10),
   addProduct
 );
 
-// Update product with image upload
+// ✅ Fix: Use uploadProduct instead of upload
 router.put('/products/:id', 
   authenticate, 
   isAffiliate,
-  upload.array('images', 10),
+  uploadProduct.array('images', 10),
   updateProduct
 );
 
