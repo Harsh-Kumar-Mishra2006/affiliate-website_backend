@@ -4,7 +4,7 @@ const router = express.Router();
 const authenticate = require('../middlewares/auth');
 const { isAdmin, isAffiliate } = require('../middlewares/roleCheck');
 // ✅ Fix: Import uploadProduct instead of upload
-const { uploadProduct } = require('../config/cloudinary');
+const { uploadProduct } = require('../config/Cloudinary');
 
 const {
   addProduct,
