@@ -1168,6 +1168,82 @@ const getAdminProducts = async (req, res) => {
   }
 };
 
+// Add this to productController.js - Get product purchase history
+
+// ============= ADMIN: Get Product Purchase History =============
+const getProductPurchaseHistory = async (req, res) => {
+  try {
+    const { id } = req.params;
+    
+    const product = await Product.findByPk(id, {
+      include: [
+        {
+          model: Category,
+          as: 'category',
+          attributes: ['id', 'name', 'slug']
+        },
+        {
+          model: User,
+          as: 'addedByUser',
+          attributes: ['id', 'name', 'email', 'role']
+        }
+      ]
+    });
+
+    if (!product) {
+      return res.status(404).json({
+        success: false,
+        error: 'Product not found'
+      });
+    }
+
+    // Get all purchases for this product
+    const purchases = await Purchase.findAll({
+      where: { productId: id },
+      include: [
+        {
+          model: User,
+          as: 'user',
+          attributes: ['id', 'name', 'email']
+        },
+        {
+          model: User,
+          as: 'affiliate',
+          attributes: ['id', 'name', 'email']
+        }
+      ],
+      order: [['createdAt', 'DESC']]
+    });
+
+    // Calculate statistics
+    const stats = {
+      totalSales: purchases.length,
+      totalRevenue: purchases.reduce((sum, p) => sum + parseFloat(p.totalAmount), 0),
+      totalCommission: purchases.reduce((sum, p) => sum + parseFloat(p.commissionAmount), 0),
+      totalAdminCommission: purchases.reduce((sum, p) => sum + parseFloat(p.adminCommissionAmount), 0),
+      verifiedPurchases: purchases.filter(p => p.paymentStatus === 'verified').length,
+      pendingPurchases: purchases.filter(p => p.paymentStatus === 'pending').length,
+      rejectedPurchases: purchases.filter(p => p.paymentStatus === 'rejected').length
+    };
+
+    res.json({
+      success: true,
+      data: {
+        product,
+        purchases,
+        stats
+      }
+    });
+
+  } catch (err) {
+    console.error('Get Product Purchase History Error:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch product purchase history: ' + err.message
+    });
+  }
+};
+
 // ============= EXPORT ALL FUNCTIONS =============
 module.exports = {
   addProduct,
@@ -1182,5 +1258,6 @@ module.exports = {
   bulkUploadProducts,
   getAdminProducts,
   getAffiliateProducts,
-  getAdminProductsWithCommission
+  getAdminProductsWithCommission,
+  getProductPurchaseHistory
 };

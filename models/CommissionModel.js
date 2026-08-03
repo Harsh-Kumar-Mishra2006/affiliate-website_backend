@@ -8,16 +8,14 @@ const Commission = sequelize.define('Commission', {
     primaryKey: true,
     autoIncrement: true
   },
-  // Affiliate who earned commission
   affiliateId: {
     type: DataTypes.INTEGER,
-    allowNull: false,
+    allowNull: true, // Can be null for admin products
     references: {
       model: 'users',
       key: 'id'
     }
   },
-  // Admin who owns the product
   adminId: {
     type: DataTypes.INTEGER,
     allowNull: false,
@@ -46,25 +44,26 @@ const Commission = sequelize.define('Commission', {
     type: DataTypes.STRING(100),
     allowNull: false
   },
-  // Affiliate commission details
   affiliateCommissionAmount: {
     type: DataTypes.DECIMAL(10, 2),
-    allowNull: false
+    allowNull: false,
+    defaultValue: 0.00
   },
   affiliateCommissionRate: {
     type: DataTypes.DECIMAL(5, 2),
-    allowNull: false
+    allowNull: false,
+    defaultValue: 0.00
   },
-  // Admin commission details
   adminCommissionAmount: {
     type: DataTypes.DECIMAL(10, 2),
-    allowNull: false
+    allowNull: false,
+    defaultValue: 0.00
   },
   adminCommissionRate: {
     type: DataTypes.DECIMAL(5, 2),
-    allowNull: false
+    allowNull: false,
+    defaultValue: 0.00
   },
-  // Original purchase details
   totalAmount: {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: false
