@@ -29,6 +29,15 @@ const commissionRoutes = require('./routes/commissionRoutes');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
+
+const models = { User, Product, Category, Purchase, Commission };
+Object.values(models).forEach(model => {
+  if (model.associate) {
+    model.associate(models);
+  }
+});
+
+
 // CORS Configuration
 const allowedOrigins = [
   'http://localhost:5173',

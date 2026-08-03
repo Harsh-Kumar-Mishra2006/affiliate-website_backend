@@ -35,20 +35,22 @@ const getAllCommissions = async (req, res) => {
       include: [
         {
           model: User,
-          as: 'affiliate',
+          as: 'commissionAffiliate',
           attributes: ['id', 'name', 'email']
         },
         {
           model: User,
-          as: 'admin',
+          as: 'commissionAdmin', 
           attributes: ['id', 'name', 'email']
         },
         {
           model: Product,
+          as: 'commissionProduct',
           attributes: ['id', 'name', 'mainImage']
         },
         {
           model: Purchase,
+          as: 'commissionPurchase',
           attributes: ['orderId', 'buyerName', 'buyerEmail']
         }
       ],
@@ -165,20 +167,22 @@ const getAdminCommissionSummary = async (req, res) => {
       include: [
         {
           model: User,
-          as: 'affiliate',
+          as: 'commissionAffiliate',
           attributes: ['id', 'name', 'email']
         },
         {
           model: User,
-          as: 'admin',
+          as: 'commissionAdmin',
           attributes: ['id', 'name', 'email']
         },
         {
           model: Product,
+          as: 'commissionProduct',
           attributes: ['id', 'name']
         },
         {
           model: Purchase,
+          as: 'commissionPurchase', 
           attributes: ['orderId', 'buyerName', 'buyerEmail']
         }
       ],

@@ -287,6 +287,7 @@ const getMyPurchases = async (req, res) => {
       include: [
         {
           model: Product,
+          as: 'product',
           attributes: ['id', 'name', 'mainImage', 'company']
         },
         {
@@ -344,6 +345,7 @@ const getPurchaseDetails = async (req, res) => {
       include: [
         {
           model: Product,
+          as: 'product',
           attributes: ['id', 'name', 'mainImage', 'company', 'description']
         },
         {
@@ -403,6 +405,7 @@ const getAllPurchases = async (req, res) => {
     // Filter by product owner type
     const productInclude = {
       model: Product,
+      as: 'product',
       attributes: ['id', 'name', 'mainImage', 'company', 'addedBy', 'addedByRole']
     };
     
@@ -426,7 +429,7 @@ const getAllPurchases = async (req, res) => {
         },
         {
           model: User,
-          as: 'paymentVerifiedBy',
+          as: 'paymentVerifiedByUser',
           attributes: ['id', 'name', 'email']
         }
       ],
@@ -693,6 +696,7 @@ const getPurchaseById = async (req, res) => {
       include: [
         {
           model: Product,
+          as: 'product',
           attributes: ['id', 'name', 'mainImage', 'company', 'price', 'addedByRole']
         },
         {
@@ -707,7 +711,7 @@ const getPurchaseById = async (req, res) => {
         },
         {
           model: User,
-          as: 'paymentVerifiedBy',
+          as: 'paymentVerifiedByUser',
           attributes: ['id', 'name', 'email']
         }
       ]
