@@ -139,4 +139,27 @@ const Product = sequelize.define('Product', {
   timestamps: true
 });
 
+// ✅ ADD THIS: Define associations
+Product.associate = function(models) {
+  Product.belongsTo(models.Category, {
+    foreignKey: 'categoryId',
+    as: 'category'
+  });
+  
+  Product.belongsTo(models.User, {
+    foreignKey: 'addedBy',
+    as: 'addedByUser'
+  });
+  
+  Product.hasMany(models.Purchase, {
+    foreignKey: 'productId',
+    as: 'productPurchases'
+  });
+
+  Product.hasMany(models.Commission, {
+    foreignKey: 'productId',
+    as: 'productCommissions'
+  });
+};
+
 module.exports = Product;

@@ -112,7 +112,6 @@ const User = sequelize.define('User', {
       if (user.password) {
         user.password = await bcrypt.hash(user.password, 10);
       }
-      // Generate affiliateId for affiliates
       if (user.role === 'affiliate' && !user.affiliateId) {
         user.affiliateId = User.generateAffiliateId(user.name);
       }
@@ -125,7 +124,7 @@ const User = sequelize.define('User', {
   }
 });
 
-// Instance methods
+// Instance methods (keep as is)
 User.prototype.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
@@ -145,7 +144,6 @@ User.prototype.generateAuthToken = function() {
   );
 };
 
-// Static method to generate random password
 User.generateRandomPassword = function() {
   const length = 10;
   const charset = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789!@#$%^&*";
@@ -156,7 +154,6 @@ User.generateRandomPassword = function() {
   return password;
 };
 
-// Generate unique affiliate ID
 User.generateAffiliateId = function(name) {
   const prefix = 'AFF';
   const random = Math.floor(10000 + Math.random() * 90000);
@@ -164,10 +161,37 @@ User.generateAffiliateId = function(name) {
   return `${prefix}${namePart}${random}`;
 };
 
-// Add this association
-User.hasMany(Product, { 
-  foreignKey: 'addedBy',
-  as: 'addedProducts'
-});
+// ✅ ADD THIS: Define associations
+User.associate = function(models) {
+  User.hasMany(models.Product, {
+    foreignKey: 'addedBy',
+    as: 'addedProducts'
+  });
+  
+  User.hasMany(models.Purchase, {
+    foreignKey: 'userId',
+    as: 'userPurchases'
+  });
+  
+  User.hasMany(models.Purchase, {
+    foreignKey: 'affiliateId',
+    as: 'affiliatePurchases'
+  });
+  
+  User.hasMany(models.Purchase, {
+    foreignKey: 'paymentVerifiedBy',
+    as: 'verifiedPurchases'
+  });
+  
+  User.hasMany(models.Commission, {
+    foreignKey: 'affiliateId',
+    as: 'commissionAffiliate'
+  });
+  
+  User.hasMany(models.Commission, {
+    foreignKey: 'adminId',
+    as: 'commissionAdmin'
+  });
+};
 
 module.exports = User;

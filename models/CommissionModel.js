@@ -85,4 +85,26 @@ const Commission = sequelize.define('Commission', {
   tableName: 'commissions'
 });
 
+Commission.associate = function(models) {
+  Commission.belongsTo(models.User, {
+    foreignKey: 'affiliateId',
+    as: 'commissionAffiliate'
+  });
+  
+  Commission.belongsTo(models.User, {
+    foreignKey: 'adminId',
+    as: 'commissionAdmin'
+  });
+  
+  Commission.belongsTo(models.Product, {
+    foreignKey: 'productId',
+    as: 'commissionProduct'
+  });
+  
+  Commission.belongsTo(models.Purchase, {
+    foreignKey: 'purchaseId',
+    as: 'commissionPurchase'
+  });
+};
+
 module.exports = Commission;

@@ -124,4 +124,32 @@ const Purchase = sequelize.define('Purchase', {
   timestamps: true
 });
 
+
+Purchase.associate = function(models) {
+  Purchase.belongsTo(models.User, {
+    foreignKey: 'userId',
+    as: 'user'
+  });
+  
+  Purchase.belongsTo(models.User, {
+    foreignKey: 'affiliateId',
+    as: 'affiliate'
+  });
+  
+  Purchase.belongsTo(models.User, {
+    foreignKey: 'paymentVerifiedBy',
+    as: 'paymentVerifiedByUser'
+  });
+  
+  Purchase.belongsTo(models.Product, {
+    foreignKey: 'productId',
+    as: 'product'
+  });
+  
+  Purchase.hasOne(models.Commission, {
+    foreignKey: 'purchaseId',
+    as: 'commission'
+  });
+};
+
 module.exports = Purchase;
