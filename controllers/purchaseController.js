@@ -5,7 +5,7 @@ const User = require('../models/User');
 const Commission = require('../models/CommissionModel');
 const { sequelize } = require('../config/db');
 const { Op } = require('sequelize');
-const { cloudinaryUtils } = require('../config/cloudinary');
+const { cloudinaryUtils } = require('../config/Cloudinary');
 
 // Generate unique order ID
 const generateOrderId = () => {
