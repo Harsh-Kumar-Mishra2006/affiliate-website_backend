@@ -124,7 +124,7 @@ const User = sequelize.define('User', {
   }
 });
 
-// Instance methods (keep as is)
+// Instance methods
 User.prototype.comparePassword = async function(candidatePassword) {
   return await bcrypt.compare(candidatePassword, this.password);
 };
@@ -161,36 +161,42 @@ User.generateAffiliateId = function(name) {
   return `${prefix}${namePart}${random}`;
 };
 
-// ✅ ADD THIS: Define associations
+// ✅ Define associations ONCE - with UNIQUE aliases
 User.associate = function(models) {
+  // Products added by this user
   User.hasMany(models.Product, {
     foreignKey: 'addedBy',
     as: 'addedProducts'
   });
   
+  // Purchases made by this user
   User.hasMany(models.Purchase, {
     foreignKey: 'userId',
-    as: 'userPurchases'
+    as: 'purchases'  // ✅ Changed from 'userPurchases' to 'purchases'
   });
   
+  // Purchases where this user is the affiliate
   User.hasMany(models.Purchase, {
     foreignKey: 'affiliateId',
-    as: 'affiliatePurchases'
+    as: 'affiliatePurchases'  // ✅ Unique alias
   });
   
+  // Purchases verified by this user
   User.hasMany(models.Purchase, {
     foreignKey: 'paymentVerifiedBy',
-    as: 'verifiedPurchases'
+    as: 'verifiedPurchases'  // ✅ Unique alias
   });
   
+  // Commissions where this user is the affiliate
   User.hasMany(models.Commission, {
     foreignKey: 'affiliateId',
-    as: 'commissionAffiliate'
+    as: 'commissionAffiliate'  // ✅ Unique alias
   });
   
+  // Commissions where this user is the admin
   User.hasMany(models.Commission, {
     foreignKey: 'adminId',
-    as: 'commissionAdmin'
+    as: 'commissionAdmin'  // ✅ Unique alias
   });
 };
 

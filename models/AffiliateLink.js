@@ -55,4 +55,17 @@ const AffiliateLink = sequelize.define('AffiliateLink', {
   timestamps: true
 });
 
+// ✅ Add associations
+AffiliateLink.associate = function(models) {
+  AffiliateLink.belongsTo(models.User, {
+    foreignKey: 'userId',
+    as: 'affiliateUser'
+  });
+  
+  AffiliateLink.belongsTo(models.Product, {
+    foreignKey: 'productId',
+    as: 'affiliateProduct'
+  });
+};
+
 module.exports = AffiliateLink;

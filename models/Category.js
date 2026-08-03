@@ -1,3 +1,4 @@
+// models/Category.js
 const { DataTypes } = require('sequelize');
 const { sequelize } = require('../config/db');
 
@@ -10,12 +11,11 @@ const Category = sequelize.define('Category', {
   name: {
     type: DataTypes.STRING(100),
     allowNull: false
-    // ✅ REMOVE: unique: true - this is causing the error
   },
   slug: {
     type: DataTypes.STRING(100),
     allowNull: false,
-    unique: true  // ✅ Keep unique on slug only
+    unique: true
   },
   description: {
     type: DataTypes.TEXT
@@ -41,5 +41,23 @@ const Category = sequelize.define('Category', {
 }, {
   timestamps: true
 });
+
+// ✅ Add associations
+Category.associate = function(models) {
+  Category.hasMany(models.Product, {
+    foreignKey: 'categoryId',
+    as: 'products'
+  });
+  
+  Category.hasMany(models.Category, {
+    foreignKey: 'parentId',
+    as: 'subcategories'
+  });
+  
+  Category.belongsTo(models.Category, {
+    foreignKey: 'parentId',
+    as: 'parentCategory'
+  });
+};
 
 module.exports = Category;

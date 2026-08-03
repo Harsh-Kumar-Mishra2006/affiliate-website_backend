@@ -85,6 +85,7 @@ const Commission = sequelize.define('Commission', {
   tableName: 'commissions'
 });
 
+// ✅ Define associations with matching aliases
 Commission.associate = function(models) {
   Commission.belongsTo(models.User, {
     foreignKey: 'affiliateId',

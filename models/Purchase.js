@@ -124,26 +124,26 @@ const Purchase = sequelize.define('Purchase', {
   timestamps: true
 });
 
-
+// ✅ Define associations with matching aliases
 Purchase.associate = function(models) {
   Purchase.belongsTo(models.User, {
     foreignKey: 'userId',
-    as: 'user'
+    as: 'user'  // ✅ Matches 'user' in include
   });
   
   Purchase.belongsTo(models.User, {
     foreignKey: 'affiliateId',
-    as: 'affiliate'
+    as: 'affiliate'  // ✅ Matches 'affiliate' in include
   });
   
   Purchase.belongsTo(models.User, {
     foreignKey: 'paymentVerifiedBy',
-    as: 'paymentVerifiedByUser'
+    as: 'paymentVerifiedByUser'  // ✅ Matches 'paymentVerifiedByUser' in include
   });
   
   Purchase.belongsTo(models.Product, {
     foreignKey: 'productId',
-    as: 'product'
+    as: 'product'  // ✅ Matches 'product' in include
   });
   
   Purchase.hasOne(models.Commission, {

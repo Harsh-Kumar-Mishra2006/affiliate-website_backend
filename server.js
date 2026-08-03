@@ -1,3 +1,4 @@
+// server.js
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
@@ -29,14 +30,13 @@ const commissionRoutes = require('./routes/commissionRoutes');
 const app = express();
 const PORT = process.env.PORT || 5000;
 
-
-const models = { User, Product, Category, Purchase, Commission };
+// ✅ Initialize associations from model files ONLY
+const models = { User, Product, Category, Purchase, Commission, AffiliateLink };
 Object.values(models).forEach(model => {
   if (model.associate) {
     model.associate(models);
   }
 });
-
 
 // CORS Configuration
 const allowedOrigins = [
@@ -68,50 +68,6 @@ app.options('/*splat', cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static('uploads'));
-
-// ============ MODEL ASSOCIATIONS ============
-const setupAssociations = () => {
-  // User associations
-  User.hasMany(AffiliateLink, { foreignKey: 'userId', as: 'affiliateLinks' });
-  User.hasMany(Commission, { foreignKey: 'userId', as: 'commissions' });
-  User.hasMany(Purchase, { foreignKey: 'userId', as: 'userPurchases' });
-  User.hasMany(Purchase, { foreignKey: 'affiliateId', as: 'affiliateEarnings' });
-  User.hasMany(Purchase, { foreignKey: 'paymentVerifiedBy', as: 'verifiedPurchases' });
-
-  // Product associations
-  Product.belongsTo(Category, { foreignKey: 'categoryId', as: 'category' });
-  Product.belongsTo(User, { foreignKey: 'addedBy', as: 'addedByUser' });
-  Product.hasMany(AffiliateLink, { foreignKey: 'productId', as: 'productAffiliateLinks' });
-  Product.hasMany(Purchase, { foreignKey: 'productId', as: 'productPurchases' });
-  Product.hasMany(Commission, { foreignKey: 'productId', as: 'productCommissions' });
-
-  // Category associations
-  Category.hasMany(Product, { foreignKey: 'categoryId', as: 'products' });
-  Category.hasMany(Category, { foreignKey: 'parentId', as: 'subcategories' });
-  Category.belongsTo(Category, { foreignKey: 'parentId', as: 'parentCategory' });
-
-  // AffiliateLink associations
-  AffiliateLink.belongsTo(User, { foreignKey: 'userId', as: 'affiliateUser' });
-  AffiliateLink.belongsTo(Product, { foreignKey: 'productId', as: 'affiliateProduct' });
-  AffiliateLink.hasMany(Commission, { foreignKey: 'affiliateLinkId', as: 'linkCommissions' });
-
-  // Commission associations
-  Commission.belongsTo(User, { foreignKey: 'userId', as: 'commissionAffiliate' });
-  Commission.belongsTo(Product, { foreignKey: 'productId', as: 'commissionProduct' });
-  Commission.belongsTo(AffiliateLink, { foreignKey: 'affiliateLinkId', as: 'commissionLink' });
-  Commission.belongsTo(Purchase, { foreignKey: 'orderId', targetKey: 'orderId', as: 'commissionPurchase' });
-
-  // Purchase associations
-  Purchase.belongsTo(User, { foreignKey: 'userId', as: 'purchaser' });
-  Purchase.belongsTo(User, { foreignKey: 'affiliateId', as: 'purchaseAffiliate' });
-  Purchase.belongsTo(User, { foreignKey: 'paymentVerifiedBy', as: 'paymentVerifier' });
-  Purchase.belongsTo(Product, { foreignKey: 'productId', as: 'purchasedProduct' });
-  Purchase.hasOne(Commission, { foreignKey: 'orderId', sourceKey: 'orderId', as: 'purchaseCommission' });
-
-  console.log('✅ All model associations configured successfully');
-};
-
-setupAssociations();
 
 // Routes
 app.use('/api/auth', authRoutes);
