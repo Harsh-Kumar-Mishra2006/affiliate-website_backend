@@ -28,9 +28,7 @@ const Product = sequelize.define('Product', {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: false
   },
-  discountedPrice: {
-    type: DataTypes.DECIMAL(10, 2)
-  },
+  // ❌ REMOVED: discountedPrice field
   images: {
     type: DataTypes.JSON,
     defaultValue: []
@@ -153,7 +151,7 @@ Product.associate = function(models) {
   
   Product.hasMany(models.Purchase, {
     foreignKey: 'productId',
-    as: 'purchases'  // ✅ Changed from 'productPurchases' to 'purchases'
+    as: 'purchases'
   });
   
   Product.hasMany(models.Commission, {

@@ -30,7 +30,7 @@ const addProduct = async (req, res) => {
       category,
       description,
       shortDescription,
-      discountedPrice,
+      // ❌ REMOVED: discountedPrice
       brand,
       sku,
       stock,
@@ -112,7 +112,7 @@ const addProduct = async (req, res) => {
       description: description || `${name} - Premium quality product from ${company}`,
       shortDescription: shortDescription || null,
       price: parseFloat(price),
-      discountedPrice: discountedPrice ? parseFloat(discountedPrice) : null,
+      // ❌ REMOVED: discountedPrice
       company,
       categoryId: categoryRecord.id,
       brand: brand || company,
@@ -202,7 +202,6 @@ const addProduct = async (req, res) => {
     });
   }
 };
-
 
 // ============= GET ALL PRODUCTS (Public) =============
 const getAllProducts = async (req, res) => {
@@ -409,7 +408,7 @@ const updateProduct = async (req, res) => {
       category,
       description,
       shortDescription,
-      discountedPrice,
+      // ❌ REMOVED: discountedPrice
       brand,
       sku,
       stock,
@@ -489,7 +488,7 @@ const updateProduct = async (req, res) => {
     if (category) updateData.categoryId = categoryId;
     if (description) updateData.description = description;
     if (shortDescription !== undefined) updateData.shortDescription = shortDescription;
-    if (discountedPrice !== undefined) updateData.discountedPrice = discountedPrice;
+    // ❌ REMOVED: discountedPrice
     if (brand) updateData.brand = brand;
     if (sku) updateData.sku = sku;
     if (stock !== undefined) updateData.stock = stock;
@@ -1063,6 +1062,7 @@ const bulkUploadProducts = async (req, res) => {
           slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now().toString(36),
           description: description || `${name} - Premium quality product from ${company}`,
           price: parseFloat(price),
+          // ❌ REMOVED: discountedPrice
           company,
           categoryId: categoryRecord.id,
           brand: brand || company,
@@ -1167,8 +1167,6 @@ const getAdminProducts = async (req, res) => {
     });
   }
 };
-
-// Add this to productController.js - Get product purchase history
 
 // ============= ADMIN: Get Product Purchase History =============
 const getProductPurchaseHistory = async (req, res) => {
