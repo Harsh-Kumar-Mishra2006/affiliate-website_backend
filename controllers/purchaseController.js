@@ -508,13 +508,14 @@ const verifyPayment = async (req, res) => {
       });
     }
 
-    // Find purchase with all details
+    // ✅ FIXED: Added 'as: 'product'' alias
     const purchase = await Purchase.findOne({
       where: { orderId },
       include: [
         {
           model: Product,
-          attributes: ['id', 'name', 'addedBy', 'addedByRole', 'price', 'discountedPrice', 'commissionRate']
+          as: 'product', // ✅ Added alias
+          attributes: ['id', 'name', 'addedBy', 'addedByRole', 'price', 'commissionRate']
         },
         {
           model: User,
@@ -565,8 +566,8 @@ const verifyPayment = async (req, res) => {
       // === COMMISSION DISTRIBUTION LOGIC ===
       const totalAmount = parseFloat(purchase.totalAmount);
       
-      // Check if product was added by affiliate or admin
-      if (purchase.Product.addedByRole === 'affiliate') {
+      // ✅ FIXED: Use purchase.product instead of purchase.Product
+      if (purchase.product && purchase.product.addedByRole === 'affiliate') {
         // Product added by affiliate - split commission
         const affiliateRate = parseFloat(purchase.commissionRate) || 10.00;
         const adminRate = parseFloat(100 - affiliateRate);
@@ -575,9 +576,9 @@ const verifyPayment = async (req, res) => {
         const adminCommission = parseFloat((totalAmount * (adminRate / 100)).toFixed(2));
 
         // Create commission record for affiliate
-        const commission = await Commission.create({
+        await Commission.create({
           affiliateId: purchase.affiliateId,
-          adminId: purchase.Product.addedBy,
+          adminId: purchase.product.addedBy,
           productId: purchase.productId,
           purchaseId: purchase.id,
           orderId: purchase.orderId,
@@ -609,29 +610,29 @@ const verifyPayment = async (req, res) => {
         // Update admin's earnings (product owner)
         await User.increment('totalEarnings', {
           by: adminCommission,
-          where: { id: purchase.Product.addedBy },
+          where: { id: purchase.product.addedBy },
           transaction
         });
 
         await User.increment('availableBalance', {
           by: adminCommission,
-          where: { id: purchase.Product.addedBy },
+          where: { id: purchase.product.addedBy },
           transaction
         });
 
         console.log(`✅ Commission Distributed (Affiliate Product):
           - Affiliate (${purchase.affiliateId}): ${affiliateRate}% = ₹${affiliateCommission}
-          - Admin (${purchase.Product.addedBy}): ${adminRate}% = ₹${adminCommission}
+          - Admin (${purchase.product.addedBy}): ${adminRate}% = ₹${adminCommission}
           - Total: ₹${totalAmount}
         `);
-      } else {
+      } else if (purchase.product) {
         // Product added by admin - full amount goes to admin
         const adminCommission = totalAmount;
 
         // Create commission record for admin
-        const commission = await Commission.create({
+        await Commission.create({
           affiliateId: null,
-          adminId: purchase.Product.addedBy,
+          adminId: purchase.product.addedBy,
           productId: purchase.productId,
           purchaseId: purchase.id,
           orderId: purchase.orderId,
@@ -648,18 +649,18 @@ const verifyPayment = async (req, res) => {
         // Update admin's earnings
         await User.increment('totalEarnings', {
           by: adminCommission,
-          where: { id: purchase.Product.addedBy },
+          where: { id: purchase.product.addedBy },
           transaction
         });
 
         await User.increment('availableBalance', {
           by: adminCommission,
-          where: { id: purchase.Product.addedBy },
+          where: { id: purchase.product.addedBy },
           transaction
         });
 
         console.log(`✅ Commission Distributed (Admin Product):
-          - Admin (${purchase.Product.addedBy}): 100% = ₹${adminCommission}
+          - Admin (${purchase.product.addedBy}): 100% = ₹${adminCommission}
           - Total: ₹${totalAmount}
         `);
       }
@@ -756,10 +757,12 @@ const getMyCommissions = async (req, res) => {
       include: [
         {
           model: Product,
+          as: 'product', // ✅ Added alias
           attributes: ['id', 'name', 'mainImage', 'company']
         },
         {
           model: Purchase,
+          as: 'purchase', // ✅ Added alias (if you have this association)
           attributes: ['orderId', 'buyerName', 'buyerEmail']
         }
       ],
@@ -806,7 +809,6 @@ const getMyCommissions = async (req, res) => {
     });
   }
 };
-
 module.exports = {
   initiatePurchase,
   uploadPaymentScreenshot,
