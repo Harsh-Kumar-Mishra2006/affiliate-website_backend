@@ -7,6 +7,7 @@ const { sequelize } = require('../config/db');
 const { cloudinaryUtils } = require('../config/Cloudinary');
 
 // ============= ADD PRODUCT (Admin & Affiliate) =============
+// ============= ADD PRODUCT (Admin & Affiliate) =============
 const addProduct = async (req, res) => {
   const transaction = await sequelize.transaction();
   
@@ -30,7 +31,6 @@ const addProduct = async (req, res) => {
       category,
       description,
       shortDescription,
-      // ❌ REMOVED: discountedPrice
       brand,
       sku,
       stock,
@@ -39,7 +39,8 @@ const addProduct = async (req, res) => {
       specifications,
       metaTitle,
       metaDescription,
-      commissionRate
+      commissionRate,
+      serviceId // ✅ NEW: Add serviceId to destructuring
     } = req.body;
 
     // Validate required fields
@@ -112,12 +113,12 @@ const addProduct = async (req, res) => {
       description: description || `${name} - Premium quality product from ${company}`,
       shortDescription: shortDescription || null,
       price: parseFloat(price),
-      // ❌ REMOVED: discountedPrice
       company,
       categoryId: categoryRecord.id,
       brand: brand || company,
       sku: productId,
       stock: stock ? parseInt(stock) : 0,
+      serviceId: serviceId || null, // ✅ NEW: Add serviceId
       images: imageUrls,
       mainImage: mainImageUrl,
       tags: tags || [],
@@ -202,7 +203,6 @@ const addProduct = async (req, res) => {
     });
   }
 };
-
 // ============= GET ALL PRODUCTS (Public) =============
 const getAllProducts = async (req, res) => {
   try {
@@ -408,7 +408,6 @@ const updateProduct = async (req, res) => {
       category,
       description,
       shortDescription,
-      // ❌ REMOVED: discountedPrice
       brand,
       sku,
       stock,
@@ -420,7 +419,8 @@ const updateProduct = async (req, res) => {
       isActive,
       isFeatured,
       commissionRate,
-      removeImages // Array of image URLs to remove
+      removeImages,
+      serviceId // ✅ NEW: Add serviceId to destructuring
     } = req.body;
 
     // Update category
@@ -453,7 +453,6 @@ const updateProduct = async (req, res) => {
     if (removeImages && removeImages.length > 0) {
       imageUrls = imageUrls.filter(url => !removeImages.includes(url));
       
-      // If main image was removed, set new main image
       if (removeImages.includes(mainImageUrl)) {
         mainImageUrl = imageUrls.length > 0 ? imageUrls[0] : null;
       }
@@ -488,10 +487,10 @@ const updateProduct = async (req, res) => {
     if (category) updateData.categoryId = categoryId;
     if (description) updateData.description = description;
     if (shortDescription !== undefined) updateData.shortDescription = shortDescription;
-    // ❌ REMOVED: discountedPrice
     if (brand) updateData.brand = brand;
     if (sku) updateData.sku = sku;
     if (stock !== undefined) updateData.stock = stock;
+    if (serviceId !== undefined) updateData.serviceId = serviceId; // ✅ NEW: Update serviceId
     if (tags) updateData.tags = tags;
     if (specifications) updateData.specifications = specifications;
     if (metaTitle) updateData.metaTitle = metaTitle;
@@ -965,13 +964,12 @@ const getProductStats = async (req, res) => {
   }
 };
 
+
 // ============= ADMIN ONLY: BULK PRODUCT UPLOAD =============
 const bulkUploadProducts = async (req, res) => {
   const transaction = await sequelize.transaction();
   
   try {
-    // isAdmin middleware ensures only admins can access
-
     const { products } = req.body;
 
     if (!products || !Array.isArray(products) || products.length === 0) {
@@ -1006,7 +1004,8 @@ const bulkUploadProducts = async (req, res) => {
           images,
           mainImage,
           tags,
-          specifications
+          specifications,
+          serviceId // ✅ NEW: Add serviceId
         } = productData;
 
         // Validate required fields
@@ -1062,12 +1061,12 @@ const bulkUploadProducts = async (req, res) => {
           slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now().toString(36),
           description: description || `${name} - Premium quality product from ${company}`,
           price: parseFloat(price),
-          // ❌ REMOVED: discountedPrice
           company,
           categoryId: categoryRecord.id,
           brand: brand || company,
           sku: productId,
           stock: stock ? parseInt(stock) : 0,
+          serviceId: serviceId || null, // ✅ NEW: Add serviceId
           affiliateUrl: affiliateUrl || null,
           images: images || [],
           mainImage: mainImage || null,

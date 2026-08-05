@@ -16,6 +16,7 @@ const generateOrderId = () => {
 };
 
 // ============= USER: Initiate Purchase =============
+// ============= USER: Initiate Purchase =============
 const initiatePurchase = async (req, res) => {
   const transaction = await sequelize.transaction();
   
@@ -71,7 +72,7 @@ const initiatePurchase = async (req, res) => {
     }
 
     // Calculate total amount
-    const price = product.discountedPrice || product.price;
+    const price = product.price; // Removed discountedPrice reference
     const totalAmount = price * quantity;
 
     // Determine commission structure based on who added the product
@@ -84,8 +85,8 @@ const initiatePurchase = async (req, res) => {
     if (product.addedByRole === 'affiliate') {
       // Product added by affiliate - split commission
       affiliateId = product.addedBy;
-      commissionRate = parseFloat(product.commissionRate) || 10.00; // Affiliate's commission rate
-      adminCommissionRate = parseFloat(100 - commissionRate); // Admin gets the rest
+      commissionRate = parseFloat(product.commissionRate) || 10.00;
+      adminCommissionRate = parseFloat(100 - commissionRate);
       
       affiliateCommissionAmount = parseFloat((totalAmount * (commissionRate / 100)).toFixed(2));
       adminCommissionAmount = parseFloat((totalAmount * (adminCommissionRate / 100)).toFixed(2));
@@ -101,13 +102,14 @@ const initiatePurchase = async (req, res) => {
     // Generate order ID
     const orderId = generateOrderId();
 
-    // Create purchase record
+    // Create purchase record with serviceId
     const purchase = await Purchase.create({
       userId: req.user.id,
       productId: product.id,
       affiliateId: affiliateId,
       orderId,
       productName: product.name,
+      serviceId: product.serviceId || null, // ✅ NEW: Copy serviceId from product
       productPrice: price,
       quantity,
       totalAmount,
@@ -142,7 +144,8 @@ const initiatePurchase = async (req, res) => {
         accountHolder: 'AffiliateSarthi Pvt Ltd'
       },
       amount: totalAmount,
-      orderId: orderId
+      orderId: orderId,
+      serviceId: product.serviceId || null // ✅ NEW: Include serviceId in response
     };
 
     // If product is from affiliate, show affiliate info
@@ -161,6 +164,7 @@ const initiatePurchase = async (req, res) => {
         purchase,
         orderId,
         totalAmount,
+        serviceId: product.serviceId || null, // ✅ NEW: Return serviceId
         commissionRate,
         commissionAmount: affiliateCommissionAmount,
         adminCommissionAmount: adminCommissionAmount,

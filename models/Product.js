@@ -28,7 +28,12 @@ const Product = sequelize.define('Product', {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: false
   },
-  // ❌ REMOVED: discountedPrice field
+  // ✅ NEW: Service ID field - manually added by user
+  serviceId: {
+    type: DataTypes.STRING(100),
+    allowNull: true,
+    comment: 'Manual service ID entered by user for identification'
+  },
   images: {
     type: DataTypes.JSON,
     defaultValue: []
@@ -123,12 +128,10 @@ const Product = sequelize.define('Product', {
     type: DataTypes.DECIMAL(10, 2),
     defaultValue: 0.00
   },
-  // Track commissions earned from this product
   totalCommissionEarned: {
     type: DataTypes.DECIMAL(10, 2),
     defaultValue: 0.00
   },
-  // Admin's share (for affiliate products)
   adminCommissionShare: {
     type: DataTypes.DECIMAL(10, 2),
     defaultValue: 0.00

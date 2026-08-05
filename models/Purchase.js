@@ -41,6 +41,12 @@ const Purchase = sequelize.define('Purchase', {
     type: DataTypes.STRING(255),
     allowNull: false
   },
+  // ✅ NEW: Service ID from product
+  serviceId: {
+    type: DataTypes.STRING(100),
+    allowNull: true,
+    comment: 'Service ID from the purchased product'
+  },
   productPrice: {
     type: DataTypes.DECIMAL(10, 2),
     allowNull: false
@@ -128,22 +134,22 @@ const Purchase = sequelize.define('Purchase', {
 Purchase.associate = function(models) {
   Purchase.belongsTo(models.User, {
     foreignKey: 'userId',
-    as: 'user'  // ✅ Matches 'user' in include
+    as: 'user'
   });
   
   Purchase.belongsTo(models.User, {
     foreignKey: 'affiliateId',
-    as: 'affiliate'  // ✅ Matches 'affiliate' in include
+    as: 'affiliate'
   });
   
   Purchase.belongsTo(models.User, {
     foreignKey: 'paymentVerifiedBy',
-    as: 'paymentVerifiedByUser'  // ✅ Matches 'paymentVerifiedByUser' in include
+    as: 'paymentVerifiedByUser'
   });
   
   Purchase.belongsTo(models.Product, {
     foreignKey: 'productId',
-    as: 'product'  // ✅ Matches 'product' in include
+    as: 'product'
   });
   
   Purchase.hasOne(models.Commission, {
