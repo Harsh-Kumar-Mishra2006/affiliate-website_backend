@@ -35,22 +35,22 @@ const getAllCommissions = async (req, res) => {
       include: [
         {
           model: User,
-          as: 'commissionAffiliate',
+          as: 'affiliate',
           attributes: ['id', 'name', 'email']
         },
         {
           model: User,
-          as: 'commissionAdmin', 
+          as: 'admin', 
           attributes: ['id', 'name', 'email']
         },
         {
           model: Product,
-          as: 'commissionProduct',
+          as: 'product', 
           attributes: ['id', 'name', 'mainImage']
         },
         {
           model: Purchase,
-          as: 'commissionPurchase',
+          as: 'purchase',
           attributes: ['orderId', 'buyerName', 'buyerEmail']
         }
       ],
@@ -167,22 +167,22 @@ const getAdminCommissionSummary = async (req, res) => {
       include: [
         {
           model: User,
-          as: 'commissionAffiliate',
+          as: 'affiliate',
           attributes: ['id', 'name', 'email']
         },
         {
           model: User,
-          as: 'commissionAdmin',
+          as: 'admin',  
           attributes: ['id', 'name', 'email']
         },
         {
           model: Product,
-          as: 'commissionProduct',
+          as: 'product',
           attributes: ['id', 'name']
         },
         {
           model: Purchase,
-          as: 'commissionPurchase', 
+          as: 'purchase', 
           attributes: ['orderId', 'buyerName', 'buyerEmail']
         }
       ],
@@ -228,10 +228,12 @@ const getCommissionSummary = async (req, res) => {
       include: [
         {
           model: Product,
+          as: 'product',
           attributes: ['id', 'name', 'mainImage']
         },
         {
           model: Purchase,
+          as: 'purchase', 
           attributes: ['orderId', 'buyerName', 'buyerEmail', 'createdAt']
         }
       ],
@@ -378,10 +380,12 @@ const exportCommissionReport = async (req, res) => {
         },
         {
           model: Product,
+          as: 'product',
           attributes: ['id', 'name']
         },
         {
           model: Purchase,
+          as: 'purchase', 
           attributes: ['orderId', 'buyerName', 'buyerEmail']
         }
       ],
@@ -391,9 +395,9 @@ const exportCommissionReport = async (req, res) => {
     // Create CSV data
     const csvData = commissions.map(c => ({
       'Order ID': c.orderId,
-      'Product': c.Product?.name || 'N/A',
-      'Affiliate': c.affiliate?.name || 'N/A',
-      'Admin': c.admin?.name || 'N/A',
+      'Product': c.product?.name || 'N/A',  
+      'Affiliate': c.affiliate?.name || 'N/A',  
+      'Admin': c.admin?.name || 'N/A',  
       'Total Amount': c.totalAmount,
       'Affiliate Commission': c.affiliateCommissionAmount,
       'Admin Commission': c.adminCommissionAmount,

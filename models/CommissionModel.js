@@ -85,27 +85,9 @@ const Commission = sequelize.define('Commission', {
   tableName: 'commissions'
 });
 
-// ✅ Define associations with matching aliases
-Commission.associate = function(models) {
-  Commission.belongsTo(models.User, {
-    foreignKey: 'affiliateId',
-    as: 'commissionAffiliate'
-  });
-  
-  Commission.belongsTo(models.User, {
-    foreignKey: 'adminId',
-    as: 'commissionAdmin'
-  });
-  
-  Commission.belongsTo(models.Product, {
-    foreignKey: 'productId',
-    as: 'commissionProduct'
-  });
-  
-  Commission.belongsTo(models.Purchase, {
-    foreignKey: 'purchaseId',
-    as: 'commissionPurchase'
-  });
-};
+Commission.belongsTo(models.User, { foreignKey: 'affiliateId', as: 'affiliate' });
+Commission.belongsTo(models.User, { foreignKey: 'adminId', as: 'admin' });
+Commission.belongsTo(models.Product, { foreignKey: 'productId', as: 'product' });
+Commission.belongsTo(models.Purchase, { foreignKey: 'purchaseId', as: 'purchase' });
 
 module.exports = Commission;

@@ -188,16 +188,8 @@ User.associate = function(models) {
   });
   
   // Commissions where this user is the affiliate
-  User.hasMany(models.Commission, {
-    foreignKey: 'affiliateId',
-    as: 'commissionAffiliate'  // ✅ Unique alias
-  });
-  
-  // Commissions where this user is the admin
-  User.hasMany(models.Commission, {
-    foreignKey: 'adminId',
-    as: 'commissionAdmin'  // ✅ Unique alias
-  });
+  User.hasMany(models.Commission, { foreignKey: 'affiliateId', as: 'affiliateCommissions' });
+  User.hasMany(models.Commission, { foreignKey: 'adminId', as: 'adminCommissions' });
 };
 
 module.exports = User;
