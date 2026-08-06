@@ -10,7 +10,7 @@ const Commission = sequelize.define('Commission', {
   },
   affiliateId: {
     type: DataTypes.INTEGER,
-    allowNull: true, // Can be null for admin products
+    allowNull: true,
     references: {
       model: 'users',
       key: 'id'
@@ -85,9 +85,27 @@ const Commission = sequelize.define('Commission', {
   tableName: 'commissions'
 });
 
-Commission.belongsTo(models.User, { foreignKey: 'affiliateId', as: 'affiliate' });
-Commission.belongsTo(models.User, { foreignKey: 'adminId', as: 'admin' });
-Commission.belongsTo(models.Product, { foreignKey: 'productId', as: 'product' });
-Commission.belongsTo(models.Purchase, { foreignKey: 'purchaseId', as: 'purchase' });
+// ✅ FIXED: Properly define the associate function with 'models' parameter
+Commission.associate = function(models) {
+  Commission.belongsTo(models.User, {
+    foreignKey: 'affiliateId',
+    as: 'affiliate'
+  });
+  
+  Commission.belongsTo(models.User, {
+    foreignKey: 'adminId',
+    as: 'admin'
+  });
+  
+  Commission.belongsTo(models.Product, {
+    foreignKey: 'productId',
+    as: 'product'
+  });
+  
+  Commission.belongsTo(models.Purchase, {
+    foreignKey: 'purchaseId',
+    as: 'purchase'
+  });
+};
 
 module.exports = Commission;
