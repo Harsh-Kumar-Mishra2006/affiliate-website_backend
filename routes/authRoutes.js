@@ -22,9 +22,14 @@ const {
   getAffiliateProfile,
   getAffiliateStats,
   updateAffiliateStatus,
-  resetAffiliatePassword
+  resetAffiliatePassword,
+  getAllUsersWithDetails,
+  getAffiliateDetails,
+  getUserDashboardStats,
+  bulkUpdateUsers,
+  exportUsersData
 } = require('../controllers/authController');
-
+const {isAdmin, isAffiliate, isUser} = require('../middlewares/roleCheck');
 // ============= PUBLIC ROUTES =============
 
 // Unified signup - Allows anyone to create account with role
@@ -87,5 +92,21 @@ router.put('/affiliates/:id/status', authenticate, updateAffiliateStatus);
 
 // Reset affiliate password
 router.post('/affiliates/:id/reset-password', authenticate, resetAffiliatePassword);
+
+
+router.get('/admin/users', authenticate, isAdmin, getAllUsersWithDetails);
+
+// ✅ NEW: Get affiliate details with full stats
+router.get('/admin/affiliates/:id/details', authenticate, isAdmin, getAffiliateDetails);
+
+// ✅ NEW: Get user dashboard stats
+router.get('/admin/dashboard-stats', authenticate, isAdmin, getUserDashboardStats);
+
+// ✅ NEW: Bulk update users
+router.post('/admin/users/bulk', authenticate, isAdmin, bulkUpdateUsers);
+
+// ✅ NEW: Export users data
+router.get('/admin/users/export', authenticate, isAdmin, exportUsersData);
+
 
 module.exports = router;

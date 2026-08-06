@@ -1106,6 +1106,584 @@ const resetAffiliatePassword = async (req, res) => {
   }
 };
 
+// ============= ADMIN: GET ALL USERS WITH DETAILS =============
+const getAllUsersWithDetails = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Admin only.'
+      });
+    }
+
+    const { role, search, status, page = 1, limit = 20 } = req.query;
+    const offset = (page - 1) * limit;
+
+    const whereClause = {};
+    
+    // Filter by role
+    if (role && role !== 'all') {
+      whereClause.role = role;
+    }
+
+    // Filter by status
+    if (status === 'active') {
+      whereClause.isActive = true;
+    } else if (status === 'inactive') {
+      whereClause.isActive = false;
+    }
+
+    // Search functionality
+    if (search) {
+      whereClause[Op.or] = [
+        { name: { [Op.like]: `%${search}%` } },
+        { email: { [Op.like]: `%${search}%` } },
+        { username: { [Op.like]: `%${search}%` } },
+        { phone: { [Op.like]: `%${search}%` } }
+      ];
+    }
+
+    const { count, rows } = await User.findAndCountAll({
+      where: whereClause,
+      attributes: { 
+        exclude: ['password', 'resetPasswordToken', 'resetPasswordExpires', 'tempPassword'] 
+      },
+      include: [
+        {
+          model: User,
+          as: 'addedByUser',
+          attributes: ['id', 'name', 'email'],
+          required: false
+        }
+      ],
+      order: [['createdAt', 'DESC']],
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      distinct: true
+    });
+
+    // Get statistics for each user
+    const usersWithStats = await Promise.all(rows.map(async (user) => {
+      const userData = user.toJSON();
+      
+      // Get counts for each user type
+      let stats = {};
+      
+      try {
+        const Product = require('../models/Product');
+        const Purchase = require('../models/Purchase');
+        const Commission = require('../models/CommissionModel');
+        
+        if (user.role === 'affiliate') {
+          // Get affiliate specific stats
+          const productCount = await Product.count({ 
+            where: { addedBy: user.id, addedByRole: 'affiliate' } 
+          });
+          
+          const totalCommissions = await Commission.sum('affiliateCommissionAmount', {
+            where: { affiliateId: user.id }
+          }) || 0;
+          
+          const pendingCommissions = await Commission.sum('affiliateCommissionAmount', {
+            where: { affiliateId: user.id, status: 'pending' }
+          }) || 0;
+          
+          const approvedCommissions = await Commission.sum('affiliateCommissionAmount', {
+            where: { affiliateId: user.id, status: 'approved' }
+          }) || 0;
+          
+          const paidCommissions = await Commission.sum('affiliateCommissionAmount', {
+            where: { affiliateId: user.id, status: 'paid' }
+          }) || 0;
+          
+          stats = {
+            totalProducts: productCount || 0,
+            totalCommissions: Number(totalCommissions),
+            pendingCommissions: Number(pendingCommissions),
+            approvedCommissions: Number(approvedCommissions),
+            paidCommissions: Number(paidCommissions),
+            totalEarnings: Number(user.totalEarnings) || 0,
+            availableBalance: Number(user.availableBalance) || 0
+          };
+        } else if (user.role === 'admin') {
+          // Get admin specific stats
+          const productCount = await Product.count({ 
+            where: { addedBy: user.id, addedByRole: 'admin' } 
+          });
+          
+          const totalAdminCommissions = await Commission.sum('adminCommissionAmount', {
+            where: { adminId: user.id }
+          }) || 0;
+          
+          stats = {
+            totalProducts: productCount || 0,
+            totalAdminCommissions: Number(totalAdminCommissions),
+            totalEarnings: Number(user.totalEarnings) || 0
+          };
+        } else {
+          // Regular user stats
+          const purchaseCount = await Purchase.count({ 
+            where: { userId: user.id } 
+          });
+          
+          stats = {
+            totalPurchases: purchaseCount || 0
+          };
+        }
+      } catch (err) {
+        console.log('Error fetching stats for user:', user.id, err.message);
+        stats = {};
+      }
+      
+      return {
+        ...userData,
+        stats
+      };
+    }));
+
+    // Summary statistics
+    const summary = {
+      totalUsers: await User.count(),
+      totalAdmins: await User.count({ where: { role: 'admin' } }),
+      totalAffiliates: await User.count({ where: { role: 'affiliate' } }),
+      totalCustomers: await User.count({ where: { role: 'user' } }),
+      activeUsers: await User.count({ where: { isActive: true } }),
+      inactiveUsers: await User.count({ where: { isActive: false } })
+    };
+
+    res.json({
+      success: true,
+      data: {
+        users: usersWithStats,
+        summary,
+        pagination: {
+          total: count,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          totalPages: Math.ceil(count / limit)
+        }
+      }
+    });
+
+  } catch (err) {
+    console.error("Get All Users With Details Error:", err);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch users: " + err.message
+    });
+  }
+};
+
+// ============= ADMIN: GET AFFILIATE DETAILS WITH FULL STATS =============
+const getAffiliateDetails = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Admin only.'
+      });
+    }
+
+    const { id } = req.params;
+
+    const affiliate = await User.findOne({
+      where: { 
+        id: id, 
+        role: 'affiliate' 
+      },
+      attributes: { 
+        exclude: ['password', 'resetPasswordToken', 'resetPasswordExpires', 'tempPassword'] 
+      },
+      include: [
+        {
+          model: User,
+          as: 'addedByUser',
+          attributes: ['id', 'name', 'email'],
+          required: false
+        }
+      ]
+    });
+
+    if (!affiliate) {
+      return res.status(404).json({
+        success: false,
+        error: 'Affiliate not found'
+      });
+    }
+
+    // Get comprehensive stats
+    try {
+      const Product = require('../models/Product');
+      const Purchase = require('../models/Purchase');
+      const Commission = require('../models/CommissionModel');
+      const AffiliateLink = require('../models/AffiliateLink');
+
+      const [products, purchases, commissions, links, totalEarnings] = await Promise.all([
+        // Products added by this affiliate
+        Product.findAll({
+          where: { addedBy: affiliate.id, addedByRole: 'affiliate' },
+          attributes: ['id', 'name', 'price', 'purchaseCount', 'totalRevenue', 'isActive', 'createdAt']
+        }),
+        
+        // Purchases from affiliate products
+        Purchase.findAll({
+          where: { affiliateId: affiliate.id },
+          include: [
+            {
+              model: Product,
+              as: 'product',
+              attributes: ['id', 'name', 'mainImage']
+            },
+            {
+              model: User,
+              as: 'user',
+              attributes: ['id', 'name', 'email']
+            }
+          ],
+          order: [['createdAt', 'DESC']],
+          limit: 50
+        }),
+        
+        // Commission history
+        Commission.findAll({
+          where: { affiliateId: affiliate.id },
+          order: [['createdAt', 'DESC']],
+          limit: 50
+        }),
+        
+        // Affiliate links
+        AffiliateLink.findAll({
+          where: { userId: affiliate.id },
+          order: [['createdAt', 'DESC']]
+        }),
+        
+        // Total earnings
+        User.findByPk(affiliate.id, {
+          attributes: ['totalEarnings', 'availableBalance']
+        })
+      ]);
+
+      // Calculate stats
+      const totalProducts = products.length;
+      const activeProducts = products.filter(p => p.isActive).length;
+      
+      const totalPurchases = purchases.length;
+      const totalRevenue = purchases.reduce((sum, p) => sum + parseFloat(p.totalAmount), 0);
+      const totalCommissionEarned = commissions.reduce((sum, c) => sum + parseFloat(c.affiliateCommissionAmount), 0);
+      
+      const commissionSummary = {
+        total: totalCommissionEarned,
+        pending: commissions.filter(c => c.status === 'pending').reduce((sum, c) => sum + parseFloat(c.affiliateCommissionAmount), 0),
+        approved: commissions.filter(c => c.status === 'approved').reduce((sum, c) => sum + parseFloat(c.affiliateCommissionAmount), 0),
+        paid: commissions.filter(c => c.status === 'paid').reduce((sum, c) => sum + parseFloat(c.affiliateCommissionAmount), 0),
+        rejected: commissions.filter(c => c.status === 'rejected').reduce((sum, c) => sum + parseFloat(c.affiliateCommissionAmount), 0)
+      };
+
+      const linkStats = {
+        total: links.length,
+        totalClicks: links.reduce((sum, l) => sum + l.clicks, 0),
+        uniqueClicks: links.reduce((sum, l) => sum + l.uniqueClicks, 0),
+        conversions: links.reduce((sum, l) => sum + l.conversions, 0),
+        totalCommission: links.reduce((sum, l) => sum + parseFloat(l.totalCommission), 0)
+      };
+
+      const affiliateData = affiliate.toJSON();
+      
+      res.json({
+        success: true,
+        data: {
+          affiliate: affiliateData,
+          stats: {
+            products: {
+              total: totalProducts,
+              active: activeProducts,
+              inactive: totalProducts - activeProducts
+            },
+            purchases: {
+              total: totalPurchases,
+              revenue: Number(totalRevenue)
+            },
+            commissions: commissionSummary,
+            links: linkStats,
+            earnings: {
+              totalEarnings: Number(totalEarnings?.totalEarnings) || 0,
+              availableBalance: Number(totalEarnings?.availableBalance) || 0
+            }
+          },
+          recentPurchases: purchases.slice(0, 10),
+          recentCommissions: commissions.slice(0, 10),
+          products: products.slice(0, 10)
+        }
+      });
+
+    } catch (err) {
+      console.error('Error fetching affiliate stats:', err);
+      // Return basic affiliate info if stats fail
+      res.json({
+        success: true,
+        data: {
+          affiliate: affiliate.toJSON(),
+          stats: {
+            products: { total: 0, active: 0, inactive: 0 },
+            purchases: { total: 0, revenue: 0 },
+            commissions: { total: 0, pending: 0, approved: 0, paid: 0, rejected: 0 },
+            links: { total: 0, totalClicks: 0, uniqueClicks: 0, conversions: 0, totalCommission: 0 },
+            earnings: { totalEarnings: Number(affiliate.totalEarnings) || 0, availableBalance: Number(affiliate.availableBalance) || 0 }
+          },
+          recentPurchases: [],
+          recentCommissions: [],
+          products: []
+        }
+      });
+    }
+
+  } catch (err) {
+    console.error("Get Affiliate Details Error:", err);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch affiliate details: " + err.message
+    });
+  }
+};
+
+// ============= ADMIN: GET USER DASHBOARD STATS =============
+const getUserDashboardStats = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Admin only.'
+      });
+    }
+
+    try {
+      const Product = require('../models/Product');
+      const Purchase = require('../models/Purchase');
+      const Commission = require('../models/CommissionModel');
+      const User = require('../models/User');
+
+      // Get recent activities
+      const recentUsers = await User.findAll({
+        attributes: ['id', 'name', 'email', 'role', 'createdAt'],
+        order: [['createdAt', 'DESC']],
+        limit: 10
+      });
+
+      const recentPurchases = await Purchase.findAll({
+        include: [
+          {
+            model: User,
+            as: 'user',
+            attributes: ['id', 'name', 'email']
+          },
+          {
+            model: Product,
+            as: 'product',
+            attributes: ['id', 'name', 'mainImage']
+          }
+        ],
+        order: [['createdAt', 'DESC']],
+        limit: 10
+      });
+
+      const recentCommissions = await Commission.findAll({
+        include: [
+          {
+            model: User,
+            as: 'affiliate',
+            attributes: ['id', 'name', 'email']
+          },
+          {
+            model: Product,
+            as: 'product',
+            attributes: ['id', 'name']
+          }
+        ],
+        order: [['createdAt', 'DESC']],
+        limit: 10
+      });
+
+      res.json({
+        success: true,
+        data: {
+          recentUsers,
+          recentPurchases,
+          recentCommissions
+        }
+      });
+
+    } catch (err) {
+      console.error('Error fetching dashboard stats:', err);
+      res.json({
+        success: true,
+        data: {
+          recentUsers: [],
+          recentPurchases: [],
+          recentCommissions: []
+        }
+      });
+    }
+
+  } catch (err) {
+    console.error("Get User Dashboard Stats Error:", err);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch dashboard stats: " + err.message
+    });
+  }
+};
+
+// ============= ADMIN: BULK USER OPERATIONS =============
+const bulkUpdateUsers = async (req, res) => {
+  const transaction = await sequelize.transaction();
+  
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Admin only.'
+      });
+    }
+
+    const { userIds, action, data } = req.body;
+
+    if (!userIds || !Array.isArray(userIds) || userIds.length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Please provide an array of user IDs'
+      });
+    }
+
+    let updateData = {};
+    let results = [];
+
+    switch (action) {
+      case 'activate':
+        updateData.isActive = true;
+        break;
+      case 'deactivate':
+        updateData.isActive = false;
+        break;
+      case 'delete':
+        // Delete users
+        for (const userId of userIds) {
+          const user = await User.findByPk(userId);
+          if (user && user.id !== req.user.id) {
+            await user.destroy({ transaction });
+            results.push({ userId, status: 'deleted' });
+          }
+        }
+        await transaction.commit();
+        return res.json({
+          success: true,
+          data: { results },
+          message: `${results.length} users deleted successfully`
+        });
+      case 'updateRole':
+        if (!data?.role) {
+          return res.status(400).json({
+            success: false,
+            error: 'Role is required for updateRole action'
+          });
+        }
+        updateData.role = data.role;
+        break;
+      default:
+        return res.status(400).json({
+          success: false,
+          error: 'Invalid action. Supported: activate, deactivate, delete, updateRole'
+        });
+    }
+
+    // Update users
+    for (const userId of userIds) {
+      const user = await User.findByPk(userId);
+      if (user) {
+        await user.update(updateData, { transaction });
+        results.push({ userId, status: 'updated' });
+      }
+    }
+
+    await transaction.commit();
+
+    res.json({
+      success: true,
+      data: { results },
+      message: `${results.length} users updated successfully`
+    });
+
+  } catch (err) {
+    await transaction.rollback();
+    console.error("Bulk Update Users Error:", err);
+    res.status(500).json({
+      success: false,
+      error: "Failed to update users: " + err.message
+    });
+  }
+};
+
+// ============= ADMIN: EXPORT USERS DATA =============
+const exportUsersData = async (req, res) => {
+  try {
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Admin only.'
+      });
+    }
+
+    const { role } = req.query;
+    const whereClause = {};
+    if (role && role !== 'all') {
+      whereClause.role = role;
+    }
+
+    const users = await User.findAll({
+      where: whereClause,
+      attributes: { 
+        exclude: ['password', 'resetPasswordToken', 'resetPasswordExpires', 'tempPassword'] 
+      },
+      order: [['createdAt', 'DESC']]
+    });
+
+    // Format data for export
+    const exportData = users.map(user => ({
+      ID: user.id,
+      Name: user.name,
+      Email: user.email,
+      Username: user.username,
+      Phone: user.phone,
+      Role: user.role,
+      Status: user.isActive ? 'Active' : 'Inactive',
+      'Created At': user.createdAt.toISOString().split('T')[0],
+      'Last Login': user.lastLogin ? user.lastLogin.toISOString().split('T')[0] : 'Never',
+      'Login Count': user.loginCount,
+      ...(user.role === 'affiliate' ? {
+        'Affiliate ID': user.affiliateId,
+        'Commission Rate': user.commissionRate,
+        'Total Earnings': user.totalEarnings,
+        'Available Balance': user.availableBalance
+      } : {})
+    }));
+
+    res.json({
+      success: true,
+      data: {
+        users: exportData,
+        total: exportData.length,
+        exportedAt: new Date().toISOString()
+      }
+    });
+
+  } catch (err) {
+    console.error("Export Users Data Error:", err);
+    res.status(500).json({
+      success: false,
+      error: "Failed to export users data: " + err.message
+    });
+  }
+};
+
 module.exports = {
   signup,
   addAffiliate,
@@ -1125,5 +1703,10 @@ module.exports = {
   updateProfile,
   logout,
   updateAffiliateStatus,
-  resetAffiliatePassword
+  resetAffiliatePassword,
+  getAllUsersWithDetails,
+  getAffiliateDetails,
+  getUserDashboardStats,
+  bulkUpdateUsers,
+  exportUsersData
 };
