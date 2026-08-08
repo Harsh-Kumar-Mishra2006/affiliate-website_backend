@@ -12,7 +12,7 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Import models
+// Import model
 const Category = require('./models/Category');
 const User = require('./models/User');
 const Product = require('./models/Product');
