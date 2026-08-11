@@ -12,7 +12,7 @@ if (!fs.existsSync(uploadsDir)) {
   fs.mkdirSync(uploadsDir, { recursive: true });
 }
 
-// Import model
+// Import models
 const Category = require('./models/Category');
 const User = require('./models/User');
 const Product = require('./models/Product');
@@ -29,6 +29,8 @@ const commissionRoutes = require('./routes/commissionRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
+const NODE_ENV = process.env.NODE_ENV || 'development';
+const IS_PRODUCTION = NODE_ENV === 'production';
 
 // ✅ Initialize associations from model files ONLY
 const models = { User, Product, Category, Purchase, Commission, AffiliateLink };
@@ -83,7 +85,8 @@ app.get('/api/health', (req, res) => {
     status: 'OK',
     message: 'Affiliate Products API is running',
     timestamp: new Date().toISOString(),
-    uptime: process.uptime()
+    uptime: process.uptime(),
+    environment: NODE_ENV
   });
 });
 
@@ -105,83 +108,144 @@ app.use((err, req, res, next) => {
   });
 });
 
+// ============ DATABASE SYNC FUNCTION ============
+const syncDatabase = async () => {
+  if (IS_PRODUCTION) {
+    // ============ PRODUCTION: Safe sync ============
+    console.log('🔄 Running in PRODUCTION mode - Using safe sync...');
+    console.log('⚠️ Tables will be created if they don\'t exist, but existing data will be preserved.');
+    
+    try {
+      // Check if tables exist
+      const [tables] = await sequelize.query('SHOW TABLES');
+      const tableNames = tables.map(t => Object.values(t)[0]);
+      
+      if (tableNames.length === 0) {
+        // No tables exist - create them with force: true (safe because no data)
+        console.log('📦 No tables found. Creating tables...');
+        await Category.sync({ force: true });
+        await User.sync({ force: true });
+        await Product.sync({ force: true });
+        await AffiliateLink.sync({ force: true });
+        await Purchase.sync({ force: true });
+        await Commission.sync({ force: true });
+        console.log('✅ All tables created successfully');
+        console.log('ℹ️ Database is empty. Run seeder to populate with sample data.');
+      } else {
+        // Tables exist - use alter: true to update schema without losing data
+        console.log(`📊 Found ${tableNames.length} existing tables. Updating schema...`);
+        
+        // Sync with alter: true (adds new columns, doesn't drop data)
+        await Category.sync({ alter: true });
+        await User.sync({ alter: true });
+        await Product.sync({ alter: true });
+        await AffiliateLink.sync({ alter: true });
+        await Purchase.sync({ alter: true });
+        await Commission.sync({ alter: true });
+        
+        console.log('✅ Tables synced successfully (data preserved)');
+      }
+    } catch (error) {
+      console.error('❌ Production sync error:', error);
+      throw error;
+    }
+  } else {
+    // ============ DEVELOPMENT: Full reset (FORCE SYNC) ============
+    console.log('🔄 Running in DEVELOPMENT mode - Performing complete database reset...');
+    console.log('⚠️ WARNING: This will delete ALL existing data!');
+    
+    try {
+      // Disable foreign key checks
+      await sequelize.query('SET FOREIGN_KEY_CHECKS = 0');
+      
+      // Get all table names
+      const [tables] = await sequelize.query('SHOW TABLES');
+      const tableNames = tables.map(t => Object.values(t)[0]);
+      
+      if (tableNames.length > 0) {
+        console.log(`🗑️ Dropping ${tableNames.length} existing tables...`);
+        
+        // Drop all tables in reverse order (child tables first)
+        const dropOrder = ['Commissions', 'Purchases', 'AffiliateLinks', 'Products', 'Categories', 'Users'];
+        
+        for (const table of dropOrder) {
+          if (tableNames.includes(table)) {
+            await sequelize.query(`DROP TABLE IF EXISTS ${table}`);
+            console.log(`   ✅ Dropped ${table}`);
+          }
+        }
+        
+        // Drop any remaining tables
+        for (const table of tableNames) {
+          if (!dropOrder.includes(table)) {
+            await sequelize.query(`DROP TABLE IF EXISTS ${table}`);
+            console.log(`   ✅ Dropped ${table}`);
+          }
+        }
+      }
+      
+      // Re-enable foreign key checks
+      await sequelize.query('SET FOREIGN_KEY_CHECKS = 1');
+      
+      // ============ CREATE TABLES IN CORRECT ORDER ============
+      console.log('🔄 Creating tables in correct order...');
+      
+      // 1. Create Category table first (no foreign keys)
+      await Category.sync({ force: true });
+      console.log('✅ Categories table created');
+      
+      // 2. Create User table (no foreign keys to Category)
+      await User.sync({ force: true });
+      console.log('✅ Users table created');
+      
+      // 3. Create Product table (foreign keys to Category and User)
+      await Product.sync({ force: true });
+      console.log('✅ Products table created');
+      
+      // 4. Create AffiliateLink table (foreign keys to User and Product)
+      await AffiliateLink.sync({ force: true });
+      console.log('✅ AffiliateLinks table created');
+      
+      // 5. Create Purchase table (foreign keys to User, Product)
+      await Purchase.sync({ force: true });
+      console.log('✅ Purchases table created');
+      
+      // 6. Create Commission table (foreign keys to User, Product, AffiliateLink, Purchase)
+      await Commission.sync({ force: true });
+      console.log('✅ Commissions table created');
+      
+      console.log('✅ All tables created successfully');
+      console.log('ℹ️ Database is empty. Run seeder to populate with sample data.');
+      
+    } catch (error) {
+      console.error('❌ Development sync error:', error);
+      throw error;
+    }
+  }
+};
+
 // ============ START SERVER ============
 const startServer = async () => {
   try {
     await testConnection();
+    console.log('✅ Database connection established');
     
-    console.log('🔄 Performing complete database reset...');
-    console.log('⚠️ WARNING: This will delete ALL existing data!');
-    
-    // Disable foreign key checks
-    await sequelize.query('SET FOREIGN_KEY_CHECKS = 0');
-    
-    // Get all table names
-    const [tables] = await sequelize.query('SHOW TABLES');
-    const tableNames = tables.map(t => Object.values(t)[0]);
-    
-    if (tableNames.length > 0) {
-      console.log(`🗑️ Dropping ${tableNames.length} existing tables...`);
-      
-      // Drop all tables in reverse order (child tables first)
-      const dropOrder = ['Commissions', 'Purchases', 'AffiliateLinks', 'Products', 'Categories', 'Users'];
-      
-      for (const table of dropOrder) {
-        if (tableNames.includes(table)) {
-          await sequelize.query(`DROP TABLE IF EXISTS ${table}`);
-          console.log(`   ✅ Dropped ${table}`);
-        }
-      }
-      
-      // Drop any remaining tables
-      for (const table of tableNames) {
-        if (!dropOrder.includes(table)) {
-          await sequelize.query(`DROP TABLE IF EXISTS ${table}`);
-          console.log(`   ✅ Dropped ${table}`);
-        }
-      }
-    }
-    
-    // Re-enable foreign key checks
-    await sequelize.query('SET FOREIGN_KEY_CHECKS = 1');
-    
-    // ============ CREATE TABLES IN CORRECT ORDER ============
-    console.log('🔄 Creating tables in correct order...');
-    
-    // 1. Create Category table first (no foreign keys)
-    await Category.sync({ force: true });
-    console.log('✅ Categories table created');
-    
-    // 2. Create User table (no foreign keys to Category)
-    await User.sync({ force: true });
-    console.log('✅ Users table created');
-    
-    // 3. Create Product table (foreign keys to Category and User)
-    await Product.sync({ force: true });
-    console.log('✅ Products table created');
-    
-    // 4. Create AffiliateLink table (foreign keys to User and Product)
-    await AffiliateLink.sync({ force: true });
-    console.log('✅ AffiliateLinks table created');
-    
-    // 5. Create Purchase table (foreign keys to User, Product)
-    await Purchase.sync({ force: true });
-    console.log('✅ Purchases table created');
-    
-    // 6. Create Commission table (foreign keys to User, Product, AffiliateLink, Purchase)
-    await Commission.sync({ force: true });
-    console.log('✅ Commissions table created');
-    
-    console.log('✅ All tables created successfully');
+    // Sync database based on environment
+    await syncDatabase();
     
     // Start server
     app.listen(PORT, () => {
       console.log(`🚀 Server is running on port ${PORT}`);
-      console.log(`📝 Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log(`📝 Environment: ${NODE_ENV}`);
       console.log(`🔗 API URL: http://localhost:${PORT}/api`);
       console.log(`📁 Uploads directory: ${uploadsDir}`);
       console.log(`✅ CORS enabled for: ${allowedOrigins.join(', ')}`);
-      console.log('ℹ️ Database is empty. Run seeder to populate with sample data.');
+      
+      if (IS_PRODUCTION) {
+        console.log('🔒 Running in PRODUCTION mode - Data is safe!');
+      } else {
+        console.log('🔧 Running in DEVELOPMENT mode - Database resets on each restart');
+      }
     });
   } catch (error) {
     console.error('❌ Failed to start server:', error);
