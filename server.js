@@ -111,7 +111,7 @@ app.use((err, req, res, next) => {
 // ============ DATABASE SYNC FUNCTION ============
 const syncDatabase = async () => {
   if (IS_PRODUCTION) {
-    // ============ PRODUCTION: Safe sync ============
+    // ============ PRODUCTION: SAFE SYNC (NO ALTER) ============
     console.log('🔄 Running in PRODUCTION mode - Using safe sync...');
     console.log('⚠️ Tables will be created if they don\'t exist, but existing data will be preserved.');
     
@@ -132,18 +132,11 @@ const syncDatabase = async () => {
         console.log('✅ All tables created successfully');
         console.log('ℹ️ Database is empty. Run seeder to populate with sample data.');
       } else {
-        // Tables exist - use alter: true to update schema without losing data
-        console.log(`📊 Found ${tableNames.length} existing tables. Updating schema...`);
-        
-        // Sync with alter: true (adds new columns, doesn't drop data)
-        await Category.sync({ alter: true });
-        await User.sync({ alter: true });
-        await Product.sync({ alter: true });
-        await AffiliateLink.sync({ alter: true });
-        await Purchase.sync({ alter: true });
-        await Commission.sync({ alter: true });
-        
-        console.log('✅ Tables synced successfully (data preserved)');
+        // Tables exist - DO NOT use alter: true (can cause issues with MySQL constraints)
+        // Just check connection and log existing tables
+        console.log(`📊 Found ${tableNames.length} existing tables. Skipping schema changes.`);
+        console.log('📋 Existing tables:', tableNames.join(', '));
+        console.log('✅ Database schema is ready (no changes made)');
       }
     } catch (error) {
       console.error('❌ Production sync error:', error);
@@ -243,6 +236,7 @@ const startServer = async () => {
       
       if (IS_PRODUCTION) {
         console.log('🔒 Running in PRODUCTION mode - Data is safe!');
+        console.log('ℹ️ To update database schema, run migrations manually.');
       } else {
         console.log('🔧 Running in DEVELOPMENT mode - Database resets on each restart');
       }
