@@ -6,20 +6,16 @@ const { Op } = require('sequelize');
 const { sequelize } = require('../config/db');
 const { cloudinaryUtils } = require('../config/Cloudinary');
 
-// ============= ADD PRODUCT (Admin & Affiliate) =============
-// ============= ADD PRODUCT (Admin & Affiliate) =============
-const addProduct = async (req, res) => {
+// ============= ADD ADMIN'S OWN PRODUCT (Admin only) =============
+const addAdminProduct = async (req, res) => {
   const transaction = await sequelize.transaction();
   
   try {
-    const userRole = req.user.role;
-    const userId = req.user.id;
-
-    // Role check
-    if (userRole !== 'admin' && userRole !== 'affiliate') {
+    // Only admin can add admin products
+    if (req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
-        error: 'Access denied. Only Admin and Affiliate can add products.'
+        error: 'Access denied. Only Admin can add products.'
       });
     }
 
@@ -34,13 +30,11 @@ const addProduct = async (req, res) => {
       brand,
       sku,
       stock,
-      affiliateUrl,
       tags,
       specifications,
       metaTitle,
       metaDescription,
-      commissionRate,
-      serviceId // ✅ NEW: Add serviceId to destructuring
+      serviceId
     } = req.body;
 
     // Validate required fields
@@ -106,7 +100,7 @@ const addProduct = async (req, res) => {
       mainImageUrl = imageUrls[0];
     }
 
-    // Build product data
+    // Build product data - Admin's own products (no affiliate fields)
     const productData = {
       name,
       slug,
@@ -118,51 +112,23 @@ const addProduct = async (req, res) => {
       brand: brand || company,
       sku: productId,
       stock: stock ? parseInt(stock) : 0,
-      serviceId: serviceId || null, // ✅ NEW: Add serviceId
+      serviceId: serviceId || null,
       images: imageUrls,
       mainImage: mainImageUrl,
       tags: tags || [],
       specifications: specifications || {},
       metaTitle: metaTitle || name,
       metaDescription: metaDescription || `${name} - ${company} - ${category}`,
-      addedBy: userId,
-      addedByRole: userRole,
+      addedBy: req.user.id,
+      addedByRole: 'admin',  // Marked as admin's own product
       isActive: true,
-      isFeatured: false
+      isFeatured: false,
+      // Admin's own products don't have affiliate fields
+      affiliateUrl: null,
+      commissionRate: null,
+      affiliateEmail: null,
+      adminCommissionShare: null
     };
-
-    // Affiliate-specific fields
-    if (userRole === 'affiliate') {
-      if (!affiliateUrl) {
-        return res.status(400).json({
-          success: false,
-          error: 'Affiliate URL is required for affiliate product addition'
-        });
-      }
-
-      let finalCommissionRate = 10.00;
-      if (commissionRate) {
-        const rate = parseFloat(commissionRate);
-        if (rate >= 10 && rate <= 25) {
-          finalCommissionRate = rate;
-        } else {
-          return res.status(400).json({
-            success: false,
-            error: 'Commission rate must be between 10% and 25%'
-          });
-        }
-      }
-
-      productData.affiliateUrl = affiliateUrl;
-      productData.commissionRate = finalCommissionRate;
-      productData.affiliateEmail = req.user.email;
-      productData.adminCommissionShare = finalCommissionRate;
-    } else {
-      productData.affiliateUrl = null;
-      productData.commissionRate = null;
-      productData.affiliateEmail = null;
-      productData.adminCommissionShare = null;
-    }
 
     const product = await Product.create(productData, { transaction });
     await transaction.commit();
@@ -183,26 +149,230 @@ const addProduct = async (req, res) => {
       ]
     });
 
-    let message = 'Product added successfully!';
-    if (userRole === 'affiliate') {
-      message = `Product added successfully with ${completeProduct.commissionRate}% commission rate. Admin will receive this commission.`;
-    }
-
     res.status(201).json({
       success: true,
       data: completeProduct,
-      message: message
+      message: 'Product added successfully!'
     });
 
   } catch (err) {
     await transaction.rollback();
-    console.error("Add Product Error:", err);
+    console.error("Add Admin Product Error:", err);
     res.status(500).json({
       success: false,
       error: "Failed to add product: " + err.message
     });
   }
 };
+
+// ============= ADD AFFILIATE PRODUCT (Admin adds product suggested by affiliate) =============
+const addAffiliateProduct = async (req, res) => {
+  const transaction = await sequelize.transaction();
+  
+  try {
+    // Only admin can add affiliate products
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Only Admin can add affiliate products.'
+      });
+    }
+
+    const {
+      name,
+      productId,
+      price,
+      company,
+      category,
+      description,
+      shortDescription,
+      brand,
+      sku,
+      stock,
+      affiliateId,        // The affiliate who suggested this product
+      affiliateUrl,       // Affiliate's referral URL
+      commissionRate,     // Commission rate for this affiliate
+      tags,
+      specifications,
+      metaTitle,
+      metaDescription,
+      serviceId
+    } = req.body;
+
+    // Validate required fields
+    if (!name || !productId || !price || !company || !category) {
+      return res.status(400).json({
+        success: false,
+        error: 'Name, Product ID, Price, Company, and Category are required fields'
+      });
+    }
+
+    // Validate affiliate-specific required fields
+    if (!affiliateId) {
+      return res.status(400).json({
+        success: false,
+        error: 'Affiliate ID is required for affiliate product addition'
+      });
+    }
+
+    if (!affiliateUrl) {
+      return res.status(400).json({
+        success: false,
+        error: 'Affiliate URL is required for affiliate product'
+      });
+    }
+
+    if (!commissionRate) {
+      return res.status(400).json({
+        success: false,
+        error: 'Commission rate is required for affiliate product'
+      });
+    }
+
+    // Validate commission rate
+    const rate = parseFloat(commissionRate);
+    if (isNaN(rate) || rate < 10 || rate > 25) {
+      return res.status(400).json({
+        success: false,
+        error: 'Commission rate must be between 10% and 25%'
+      });
+    }
+
+    // Verify that the affiliate exists
+    const affiliateUser = await User.findOne({
+      where: { 
+        id: affiliateId,
+        role: 'affiliate'
+      }
+    });
+
+    if (!affiliateUser) {
+      return res.status(404).json({
+        success: false,
+        error: 'Affiliate not found. Please provide a valid affiliate ID.'
+      });
+    }
+
+    // Check if product exists
+    const existingProduct = await Product.findOne({
+      where: { 
+        [Op.or]: [
+          { sku: productId },
+          { slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-') }
+        ]
+      }
+    });
+
+    if (existingProduct) {
+      return res.status(400).json({
+        success: false,
+        error: 'Product with this ID or name already exists'
+      });
+    }
+
+    // Find or create category
+    let categoryRecord = await Category.findOne({
+      where: { 
+        [Op.or]: [
+          { name: category },
+          { slug: category.toLowerCase().replace(/[^a-z0-9]+/g, '-') }
+        ]
+      }
+    });
+
+    if (!categoryRecord) {
+      categoryRecord = await Category.create({
+        name: category,
+        slug: category.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
+        isActive: true
+      }, { transaction });
+    }
+
+    // Generate slug from name
+    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now().toString(36);
+
+    // Handle image uploads
+    let imageUrls = [];
+    let mainImageUrl = null;
+
+    if (req.files && req.files.length > 0) {
+      const uploadPromises = req.files.map(file => 
+        cloudinaryUtils.uploadImage(file.path, {
+          folder: `products/${slug}`,
+          public_id: `${slug}-${Date.now()}`
+        })
+      );
+      
+      const uploadResults = await Promise.all(uploadPromises);
+      imageUrls = uploadResults.map(result => result.secure_url);
+      mainImageUrl = imageUrls[0];
+    }
+
+    // Build product data with affiliate fields
+    const productData = {
+      name,
+      slug,
+      description: description || `${name} - Premium quality product from ${company}`,
+      shortDescription: shortDescription || null,
+      price: parseFloat(price),
+      company,
+      categoryId: categoryRecord.id,
+      brand: brand || company,
+      sku: productId,
+      stock: stock ? parseInt(stock) : 0,
+      serviceId: serviceId || null,
+      images: imageUrls,
+      mainImage: mainImageUrl,
+      tags: tags || [],
+      specifications: specifications || {},
+      metaTitle: metaTitle || name,
+      metaDescription: metaDescription || `${name} - ${company} - ${category}`,
+      addedBy: affiliateId,        // The affiliate who suggested it
+      addedByRole: 'affiliate',    // Marked as affiliate product
+      isActive: true,
+      isFeatured: false,
+      // Affiliate-specific fields
+      affiliateUrl: affiliateUrl,
+      commissionRate: rate,
+      affiliateEmail: affiliateUser.email,
+      adminCommissionShare: rate,  // Admin gets this commission when sold
+    };
+
+    const product = await Product.create(productData, { transaction });
+    await transaction.commit();
+
+    // Fetch complete product with affiliate details
+    const completeProduct = await Product.findByPk(product.id, {
+      include: [
+        {
+          model: Category,
+          as: 'category',
+          attributes: ['id', 'name', 'slug']
+        },
+        {
+          model: User,
+          as: 'addedByUser',
+          attributes: ['id', 'name', 'email', 'role', 'affiliateId']
+        }
+      ]
+    });
+
+    res.status(201).json({
+      success: true,
+      data: completeProduct,
+      message: `Affiliate product added successfully for ${affiliateUser.name} with ${rate}% commission rate!`
+    });
+
+  } catch (err) {
+    await transaction.rollback();
+    console.error("Add Affiliate Product Error:", err);
+    res.status(500).json({
+      success: false,
+      error: "Failed to add affiliate product: " + err.message
+    });
+  }
+};
+
 // ============= GET ALL PRODUCTS (Public) =============
 const getAllProducts = async (req, res) => {
   try {
@@ -276,7 +446,7 @@ const getAllProducts = async (req, res) => {
         {
           model: User,
           as: 'addedByUser',
-          attributes: ['id', 'name', 'email', 'role']
+          attributes: ['id', 'name', 'email', 'role', 'affiliateId']
         }
       ],
       order,
@@ -292,6 +462,8 @@ const getAllProducts = async (req, res) => {
         delete data.commissionRate;
         delete data.adminCommissionShare;
         delete data.totalCommissionEarned;
+        delete data.affiliateEmail;
+        // Keep affiliateUrl for reference
       }
       return data;
     });
@@ -340,7 +512,7 @@ const getProductById = async (req, res) => {
         {
           model: User,
           as: 'addedByUser',
-          attributes: ['id', 'name', 'email', 'role']
+          attributes: ['id', 'name', 'email', 'role', 'affiliateId']
         }
       ]
     });
@@ -358,6 +530,8 @@ const getProductById = async (req, res) => {
       delete productData.commissionRate;
       delete productData.adminCommissionShare;
       delete productData.totalCommissionEarned;
+      delete productData.affiliateEmail;
+      // Keep affiliateUrl for reference
     }
 
     res.json({
@@ -374,7 +548,7 @@ const getProductById = async (req, res) => {
   }
 };
 
-// ============= UPDATE PRODUCT (Admin & Affiliate) =============
+// ============= UPDATE PRODUCT (Admin & Affiliate owners) =============
 const updateProduct = async (req, res) => {
   const transaction = await sequelize.transaction();
   
@@ -393,10 +567,12 @@ const updateProduct = async (req, res) => {
     }
 
     // Check permissions
+    // Admin can update any product
+    // Affiliate can only update their own products
     if (userRole === 'affiliate' && product.addedBy !== userId) {
       return res.status(403).json({
         success: false,
-        error: 'You can only update products you added'
+        error: 'You can only update products you suggested'
       });
     }
 
@@ -420,7 +596,7 @@ const updateProduct = async (req, res) => {
       isFeatured,
       commissionRate,
       removeImages,
-      serviceId // ✅ NEW: Add serviceId to destructuring
+      serviceId
     } = req.body;
 
     // Update category
@@ -490,7 +666,7 @@ const updateProduct = async (req, res) => {
     if (brand) updateData.brand = brand;
     if (sku) updateData.sku = sku;
     if (stock !== undefined) updateData.stock = stock;
-    if (serviceId !== undefined) updateData.serviceId = serviceId; // ✅ NEW: Update serviceId
+    if (serviceId !== undefined) updateData.serviceId = serviceId;
     if (tags) updateData.tags = tags;
     if (specifications) updateData.specifications = specifications;
     if (metaTitle) updateData.metaTitle = metaTitle;
@@ -506,11 +682,10 @@ const updateProduct = async (req, res) => {
       }
     }
 
-    // Affiliate-specific updates
-    if (userRole === 'affiliate') {
-      if (affiliateUrl) updateData.affiliateUrl = affiliateUrl;
-      
-      if (commissionRate) {
+    // Affiliate-specific updates (only for affiliate products)
+    if (product.addedByRole === 'affiliate') {
+      // Only admin can update commission rate
+      if (userRole === 'admin' && commissionRate) {
         const rate = parseFloat(commissionRate);
         if (rate >= 10 && rate <= 25) {
           updateData.commissionRate = rate;
@@ -521,6 +696,16 @@ const updateProduct = async (req, res) => {
             error: 'Commission rate must be between 10% and 25%'
           });
         }
+      }
+      
+      // Affiliate can update affiliate URL
+      if (userRole === 'affiliate' && affiliateUrl) {
+        updateData.affiliateUrl = affiliateUrl;
+      }
+      
+      // Admin can update affiliate email if needed
+      if (userRole === 'admin' && req.body.affiliateEmail) {
+        updateData.affiliateEmail = req.body.affiliateEmail;
       }
     }
 
@@ -538,7 +723,7 @@ const updateProduct = async (req, res) => {
         {
           model: User,
           as: 'addedByUser',
-          attributes: ['id', 'name', 'email', 'role']
+          attributes: ['id', 'name', 'email', 'role', 'affiliateId']
         }
       ]
     });
@@ -562,8 +747,7 @@ const updateProduct = async (req, res) => {
 // ============= AFFILIATE: GET THEIR PRODUCTS =============
 const getAffiliateProducts = async (req, res) => {
   try {
-    // isAffiliate middleware already ensures only affiliates and admins can access
-    // But we restrict to affiliate only here
+    // Only affiliates can view their products
     if (req.user.role !== 'affiliate') {
       return res.status(403).json({
         success: false,
@@ -626,7 +810,14 @@ const getAffiliateProducts = async (req, res) => {
 // ============= ADMIN: GET PRODUCTS WITH COMMISSION INFO =============
 const getAdminProductsWithCommission = async (req, res) => {
   try {
-    // isAdmin middleware ensures only admins can access
+    // Only admin can access
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Admin only.'
+      });
+    }
+
     const { page = 1, limit = 20 } = req.query;
     const offset = (page - 1) * limit;
 
@@ -643,7 +834,7 @@ const getAdminProductsWithCommission = async (req, res) => {
         {
           model: User,
           as: 'addedByUser',
-          attributes: ['id', 'name', 'email']
+          attributes: ['id', 'name', 'email', 'affiliateId']
         }
       ],
       order: [['createdAt', 'DESC']],
@@ -690,7 +881,13 @@ const deleteProduct = async (req, res) => {
   try {
     const { id } = req.params;
     
-    // isAdmin middleware ensures only admins can access
+    // Only admin can delete any product
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Only Admin can delete products.'
+      });
+    }
 
     const product = await Product.findByPk(id);
 
@@ -899,7 +1096,13 @@ const getFeaturedProducts = async (req, res) => {
 // ============= ADMIN ONLY: GET PRODUCT STATISTICS =============
 const getProductStats = async (req, res) => {
   try {
-    // isAdmin middleware ensures only admins can access
+    // Only admin can access
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Admin only.'
+      });
+    }
 
     const [total, active, inactive] = await Promise.all([
       Product.count(),
@@ -907,11 +1110,12 @@ const getProductStats = async (req, res) => {
       Product.count({ where: { isActive: false } })
     ]);
     
-    // Get affiliate product stats
+    // Get affiliate product stats (products suggested by affiliates)
     const affiliateProducts = await Product.count({ 
       where: { addedByRole: 'affiliate' } 
     });
     
+    // Get admin product stats (admin's own products)
     const adminProducts = await Product.count({ 
       where: { addedByRole: 'admin' } 
     });
@@ -920,7 +1124,7 @@ const getProductStats = async (req, res) => {
     const revenueResult = await Product.sum('totalRevenue');
     const totalRevenue = revenueResult || 0;
 
-    // Calculate total commission earned
+    // Calculate total commission earned by affiliates
     const totalCommissionEarned = await Product.sum('totalCommissionEarned', {
       where: { addedByRole: 'affiliate' }
     });
@@ -964,12 +1168,19 @@ const getProductStats = async (req, res) => {
   }
 };
 
-
 // ============= ADMIN ONLY: BULK PRODUCT UPLOAD =============
 const bulkUploadProducts = async (req, res) => {
   const transaction = await sequelize.transaction();
   
   try {
+    // Only admin can bulk upload
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Admin only.'
+      });
+    }
+
     const { products } = req.body;
 
     if (!products || !Array.isArray(products) || products.length === 0) {
@@ -1001,11 +1212,13 @@ const bulkUploadProducts = async (req, res) => {
           brand,
           stock,
           affiliateUrl,
+          affiliateId,      // If provided, this is an affiliate product
+          commissionRate,   // Required if affiliateId is provided
           images,
           mainImage,
           tags,
           specifications,
-          serviceId // ✅ NEW: Add serviceId
+          serviceId
         } = productData;
 
         // Validate required fields
@@ -1037,6 +1250,54 @@ const bulkUploadProducts = async (req, res) => {
           continue;
         }
 
+        // Determine if this is an affiliate product
+        let isAffiliateProduct = false;
+        let affiliateUser = null;
+        
+        if (affiliateId) {
+          affiliateUser = await User.findOne({
+            where: { 
+              id: affiliateId,
+              role: 'affiliate'
+            }
+          });
+          
+          if (affiliateUser) {
+            isAffiliateProduct = true;
+          } else {
+            errors.push({
+              index,
+              product: productData,
+              error: 'Invalid affiliate ID. Affiliate not found.'
+            });
+            continue;
+          }
+        }
+
+        // Validate commission rate for affiliate products
+        let finalCommissionRate = null;
+        if (isAffiliateProduct) {
+          if (!commissionRate) {
+            errors.push({
+              index,
+              product: productData,
+              error: 'Commission rate is required for affiliate products'
+            });
+            continue;
+          }
+          
+          const rate = parseFloat(commissionRate);
+          if (isNaN(rate) || rate < 10 || rate > 25) {
+            errors.push({
+              index,
+              product: productData,
+              error: 'Commission rate must be between 10% and 25%'
+            });
+            continue;
+          }
+          finalCommissionRate = rate;
+        }
+
         // Find or create category
         let categoryRecord = await Category.findOne({
           where: { 
@@ -1066,16 +1327,20 @@ const bulkUploadProducts = async (req, res) => {
           brand: brand || company,
           sku: productId,
           stock: stock ? parseInt(stock) : 0,
-          serviceId: serviceId || null, // ✅ NEW: Add serviceId
+          serviceId: serviceId || null,
           affiliateUrl: affiliateUrl || null,
           images: images || [],
           mainImage: mainImage || null,
           tags: tags || [],
           specifications: specifications || {},
-          addedBy: req.user.id,
-          addedByRole: 'admin',
+          addedBy: isAffiliateProduct ? affiliateUser.id : req.user.id,
+          addedByRole: isAffiliateProduct ? 'affiliate' : 'admin',
           isActive: true,
-          isFeatured: false
+          isFeatured: false,
+          // Affiliate-specific fields
+          commissionRate: finalCommissionRate,
+          affiliateEmail: isAffiliateProduct ? affiliateUser.email : null,
+          adminCommissionShare: finalCommissionRate
         }, { transaction });
 
         createdProducts.push(product);
@@ -1112,17 +1377,30 @@ const bulkUploadProducts = async (req, res) => {
   }
 };
 
-// ============= ADMIN ONLY: GET PRODUCTS BY ADMIN =============
+// ============= ADMIN ONLY: GET ADMIN PRODUCTS =============
 const getAdminProducts = async (req, res) => {
   try {
-    // isAdmin middleware ensures only admins can access
+    // Only admin can access
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Admin only.'
+      });
+    }
 
-    const { page = 1, limit = 50, showInactive = false } = req.query;
+    const { page = 1, limit = 50, showInactive = false, type } = req.query;
     const offset = (page - 1) * limit;
 
     const whereClause = {};
     if (!showInactive) {
       whereClause.isActive = true;
+    }
+
+    // Filter by product type
+    if (type === 'admin') {
+      whereClause.addedByRole = 'admin';
+    } else if (type === 'affiliate') {
+      whereClause.addedByRole = 'affiliate';
     }
 
     const { count, rows } = await Product.findAndCountAll({
@@ -1136,7 +1414,7 @@ const getAdminProducts = async (req, res) => {
         {
           model: User,
           as: 'addedByUser',
-          attributes: ['id', 'name', 'email', 'role']
+          attributes: ['id', 'name', 'email', 'role', 'affiliateId']
         }
       ],
       order: [['createdAt', 'DESC']],
@@ -1170,7 +1448,16 @@ const getAdminProducts = async (req, res) => {
 // ============= ADMIN: Get Product Purchase History =============
 const getProductPurchaseHistory = async (req, res) => {
   try {
+    // Only admin can access
+    if (req.user.role !== 'admin') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Admin only.'
+      });
+    }
+
     const { id } = req.params;
+    const Purchase = require('./Purchase');
     
     const product = await Product.findByPk(id, {
       include: [
@@ -1182,7 +1469,7 @@ const getProductPurchaseHistory = async (req, res) => {
         {
           model: User,
           as: 'addedByUser',
-          attributes: ['id', 'name', 'email', 'role']
+          attributes: ['id', 'name', 'email', 'role', 'affiliateId']
         }
       ]
     });
@@ -1243,18 +1530,25 @@ const getProductPurchaseHistory = async (req, res) => {
 
 // ============= EXPORT ALL FUNCTIONS =============
 module.exports = {
-  addProduct,
+  // Admin adds admin's own product
+  addAdminProduct,
+  // Admin adds affiliate product (suggested by affiliate)
+  addAffiliateProduct,
+  // Public routes
   getAllProducts,
   getProductById,
-  updateProduct,
-  deleteProduct,
   getProductsByCategory,
   searchProducts,
   getFeaturedProducts,
+  // Update and Delete
+  updateProduct,
+  deleteProduct,
+  // Affiliate routes
+  getAffiliateProducts,
+  // Admin routes
+  getAdminProducts,
+  getAdminProductsWithCommission,
   getProductStats,
   bulkUploadProducts,
-  getAdminProducts,
-  getAffiliateProducts,
-  getAdminProductsWithCommission,
   getProductPurchaseHistory
 };
