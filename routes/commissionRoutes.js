@@ -3,10 +3,12 @@ const express = require('express');
 const router = express.Router();
 const authenticate = require('../middlewares/auth');
 const { isAdmin, isAffiliate } = require('../middlewares/roleCheck');
+
+// ✅ Fix: Change getCommissionSummary to getAffiliateCommissionSummary
 const {
   getAllCommissions,
   updateCommissionStatus,
-  getCommissionSummary,
+  getAffiliateCommissionSummary,  
   getAdminCommissionSummary,
   getCommissionStatistics,
   exportCommissionReport
@@ -29,7 +31,7 @@ router.get('/admin/commission-stats', authenticate, isAdmin, getCommissionStatis
 router.get('/admin/commission-export', authenticate, isAdmin, exportCommissionReport);
 
 // ============= AFFILIATE ROUTES =============
-// Get affiliate commission summary
-router.get('/affiliate/commission-summary', authenticate, isAffiliate, getCommissionSummary);
+// ✅ Fix: Use getAffiliateCommissionSummary
+router.get('/affiliate/commission-summary', authenticate, isAffiliate, getAffiliateCommissionSummary);
 
 module.exports = router;
