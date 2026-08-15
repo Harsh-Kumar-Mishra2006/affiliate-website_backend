@@ -163,6 +163,12 @@ User.generateAffiliateId = function(name) {
 
 // ✅ Define associations ONCE - with UNIQUE aliases
 User.associate = function(models) {
+  // ✅ Self-referential association for addedBy
+  User.belongsTo(models.User, {
+    foreignKey: 'addedBy',
+    as: 'addedByUser'
+  });
+  
   // Products added by this user
   User.hasMany(models.Product, {
     foreignKey: 'addedBy',
@@ -172,24 +178,32 @@ User.associate = function(models) {
   // Purchases made by this user
   User.hasMany(models.Purchase, {
     foreignKey: 'userId',
-    as: 'purchases'  // ✅ Changed from 'userPurchases' to 'purchases'
+    as: 'purchases'
   });
   
   // Purchases where this user is the affiliate
   User.hasMany(models.Purchase, {
     foreignKey: 'affiliateId',
-    as: 'affiliatePurchases'  // ✅ Unique alias
+    as: 'affiliatePurchases'
   });
   
   // Purchases verified by this user
   User.hasMany(models.Purchase, {
     foreignKey: 'paymentVerifiedBy',
-    as: 'verifiedPurchases'  // ✅ Unique alias
+    as: 'verifiedPurchases'
   });
   
   // Commissions where this user is the affiliate
-  User.hasMany(models.Commission, { foreignKey: 'affiliateId', as: 'affiliateCommissions' });
-  User.hasMany(models.Commission, { foreignKey: 'adminId', as: 'adminCommissions' });
+  User.hasMany(models.Commission, {
+    foreignKey: 'affiliateId',
+    as: 'affiliateCommissions'
+  });
+  
+  // Commissions where this user is the admin
+  User.hasMany(models.Commission, {
+    foreignKey: 'adminId',
+    as: 'adminCommissions'
+  });
 };
 
 module.exports = User;
