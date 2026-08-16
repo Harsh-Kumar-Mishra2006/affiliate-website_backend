@@ -108,12 +108,10 @@ app.use((err, req, res, next) => {
   });
 });
 
-// ============ DATABASE SYNC FUNCTION ============
 const syncDatabase = async () => {
   if (IS_PRODUCTION) {
-    // ============ PRODUCTION: SAFE SYNC (NO ALTER) ============
+    // ============ PRODUCTION: SAFE SYNC (NO ALTER, NO FORCE) ============
     console.log('🔄 Running in PRODUCTION mode - Using safe sync...');
-    console.log('⚠️ Tables will be created if they don\'t exist, but existing data will be preserved.');
     
     try {
       // Check if tables exist
@@ -121,22 +119,24 @@ const syncDatabase = async () => {
       const tableNames = tables.map(t => Object.values(t)[0]);
       
       if (tableNames.length === 0) {
-        // No tables exist - create them with force: true (safe because no data)
-        console.log('📦 No tables found. Creating tables...');
-        await Category.sync({ force: true });
-        await User.sync({ force: true });
-        await Product.sync({ force: true });
-        await AffiliateLink.sync({ force: true });
-        await Purchase.sync({ force: true });
-        await Commission.sync({ force: true });
-        console.log('✅ All tables created successfully');
-        console.log('ℹ️ Database is empty. Run seeder to populate with sample data.');
+        console.error('❌ CRITICAL: No tables found in production!');
+        console.error('⚠️ Database appears empty. Please restore from backup or run migrations manually.');
+        console.error('⚠️ DO NOT auto-create tables in production to prevent data loss!');
+        throw new Error('Production database is empty - manual intervention required');
       } else {
-        // Tables exist - DO NOT use alter: true (can cause issues with MySQL constraints)
-        // Just check connection and log existing tables
-        console.log(`📊 Found ${tableNames.length} existing tables. Skipping schema changes.`);
+        // Tables exist - DO NOT sync at all (no alter, no force)
+        console.log(`📊 Found ${tableNames.length} existing tables.`);
         console.log('📋 Existing tables:', tableNames.join(', '));
         console.log('✅ Database schema is ready (no changes made)');
+        
+        // Optionally, verify critical tables exist
+        const criticalTables = ['Users', 'Products', 'Categories', 'Purchases', 'Commissions'];
+        const missingTables = criticalTables.filter(t => !tableNames.includes(t));
+        
+        if (missingTables.length > 0) {
+          console.warn(`⚠️ Warning: Missing critical tables: ${missingTables.join(', ')}`);
+          console.warn('⚠️ Some features may not work correctly');
+        }
       }
     } catch (error) {
       console.error('❌ Production sync error:', error);
