@@ -1144,7 +1144,7 @@ const getAllUsersWithDetails = async (req, res) => {
     const { count, rows } = await User.findAndCountAll({
       where: whereClause,
       attributes: { 
-        exclude: ['password', 'resetPasswordToken', 'resetPasswordExpires'] 
+        exclude: ['resetPasswordToken', 'resetPasswordExpires'] 
         // ✅ Keep tempPassword for showing temporary password info
       },
       include: [
@@ -1234,7 +1234,7 @@ const getAllUsersWithDetails = async (req, res) => {
       return {
         ...userData,
         // ✅ Include tempPassword if exists (for password display)
-        hasTemporaryPassword: !!user.tempPassword,
+        tempPassword: !!user.password,
         // ✅ Add serviceId for affiliates
         serviceId: user.role === 'affiliate' ? user.affiliateId : null,
         stats
