@@ -1106,6 +1106,7 @@ const resetAffiliatePassword = async (req, res) => {
   }
 };
 
+
 // ============= ADMIN: GET ALL USERS WITH DETAILS =============
 const getAllUsersWithDetails = async (req, res) => {
   try {
@@ -1121,19 +1122,16 @@ const getAllUsersWithDetails = async (req, res) => {
 
     const whereClause = {};
     
-    // Filter by role
     if (role && role !== 'all') {
       whereClause.role = role;
     }
 
-    // Filter by status
     if (status === 'active') {
       whereClause.isActive = true;
     } else if (status === 'inactive') {
       whereClause.isActive = false;
     }
 
-    // Search functionality
     if (search) {
       whereClause[Op.or] = [
         { name: { [Op.like]: `%${search}%` } },
@@ -1146,7 +1144,8 @@ const getAllUsersWithDetails = async (req, res) => {
     const { count, rows } = await User.findAndCountAll({
       where: whereClause,
       attributes: { 
-        exclude: ['password', 'resetPasswordToken', 'resetPasswordExpires', 'tempPassword'] 
+        exclude: ['password', 'resetPasswordToken', 'resetPasswordExpires'] 
+        // ✅ Keep tempPassword for showing temporary password info
       },
       include: [
         {
@@ -1166,7 +1165,6 @@ const getAllUsersWithDetails = async (req, res) => {
     const usersWithStats = await Promise.all(rows.map(async (user) => {
       const userData = user.toJSON();
       
-      // Get counts for each user type
       let stats = {};
       
       try {
@@ -1175,7 +1173,6 @@ const getAllUsersWithDetails = async (req, res) => {
         const Commission = require('../models/CommissionModel');
         
         if (user.role === 'affiliate') {
-          // Get affiliate specific stats
           const productCount = await Product.count({ 
             where: { addedBy: user.id, addedByRole: 'affiliate' } 
           });
@@ -1206,7 +1203,6 @@ const getAllUsersWithDetails = async (req, res) => {
             availableBalance: Number(user.availableBalance) || 0
           };
         } else if (user.role === 'admin') {
-          // Get admin specific stats
           const productCount = await Product.count({ 
             where: { addedBy: user.id, addedByRole: 'admin' } 
           });
@@ -1221,7 +1217,6 @@ const getAllUsersWithDetails = async (req, res) => {
             totalEarnings: Number(user.totalEarnings) || 0
           };
         } else {
-          // Regular user stats
           const purchaseCount = await Purchase.count({ 
             where: { userId: user.id } 
           });
@@ -1235,13 +1230,17 @@ const getAllUsersWithDetails = async (req, res) => {
         stats = {};
       }
       
+      // ✅ Add serviceId for affiliates
       return {
         ...userData,
+        // ✅ Include tempPassword if exists (for password display)
+        hasTemporaryPassword: !!user.tempPassword,
+        // ✅ Add serviceId for affiliates
+        serviceId: user.role === 'affiliate' ? user.affiliateId : null,
         stats
       };
     }));
 
-    // Summary statistics
     const summary = {
       totalUsers: await User.count(),
       totalAdmins: await User.count({ where: { role: 'admin' } }),
