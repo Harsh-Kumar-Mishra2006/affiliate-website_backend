@@ -108,6 +108,16 @@ const Product = sequelize.define('Product', {
     type: DataTypes.ENUM('admin', 'affiliate'),
     allowNull: true
   },
+  isMaster: {
+    type: DataTypes.BOOLEAN,
+    defaultValue: false,
+    comment: 'True for master products (admin created, not public)'
+  },
+  status: {
+    type: DataTypes.ENUM('draft', 'pending', 'active', 'inactive'),
+    defaultValue: 'draft',
+    comment: 'draft: admin created, pending: affiliate selected, active: live product'
+  },
   commissionRate: {
     type: DataTypes.DECIMAL(5, 2),
     allowNull: true,
