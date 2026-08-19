@@ -1554,10 +1554,10 @@ const getProductPurchaseHistory = async (req, res) => {
 
 // ============= EXPORT ALL FUNCTIONS =============
 module.exports = {
-  // Admin adds admin's own product
-  addAdminProduct,
-  // Admin adds affiliate product (suggested by affiliate)
-  addAffiliateProduct,
+  createMasterProduct,
+  getMasterProducts,
+  affiliateAddProduct,
+  getAvailableMasterProducts,
   // Public routes
   getAllProducts,
   getProductById,

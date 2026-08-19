@@ -6,10 +6,10 @@ const { isAdmin, isAffiliate } = require('../middlewares/roleCheck');
 const { uploadProduct } = require('../config/Cloudinary');
 
 const {
-  // Admin adds admin's own product
-  addAdminProduct,
-  // Admin adds affiliate product (suggested by affiliate)
-  addAffiliateProduct,
+  createMasterProduct,
+  getMasterProducts,
+  affiliateAddProduct,
+  getAvailableMasterProducts,
   // Public routes
   getAllProducts,
   getProductById,
@@ -55,24 +55,6 @@ router.get(
 );
 
 // ============= ADMIN ROUTES =============
-
-// ADMIN: Add admin's own product (no affiliate fields)
-router.post(
-  '/admin/products/add',
-  authenticate,
-  isAdmin,
-  uploadProduct.array('images', 10),
-  addAdminProduct
-);
-
-// ADMIN: Add affiliate product (suggested by affiliate)
-router.post(
-  '/admin/products/add-affiliate',
-  authenticate,
-  isAdmin,
-  uploadProduct.array('images', 10),
-  addAffiliateProduct
-);
 
 // ADMIN: View all products with filters
 router.get(
@@ -132,4 +114,46 @@ router.delete(
   deleteProduct
 );
 
+// ADMIN: Create master product (draft, not public)
+router.post(
+  '/admin/products/master',
+  authenticate,
+  isAdmin,
+  uploadProduct.array('images', 10),
+  createMasterProduct
+);
+
+// ADMIN: Get all master products
+router.get(
+  '/admin/products/master',
+  authenticate,
+  isAdmin,
+  getMasterProducts
+);
+
+// ============= AFFILIATE ROUTES =============
+
+// AFFILIATE: Get available master products to choose from
+router.get(
+  '/affiliate/products/available',
+  authenticate,
+  isAffiliate,
+  getAvailableMasterProducts
+);
+
+// AFFILIATE: Select master product and add to store
+router.post(
+  '/affiliate/products/add',
+  authenticate,
+  isAffiliate,
+  affiliateAddProduct
+);
+
+// AFFILIATE: View their own products
+router.get(
+  '/affiliate/products',
+  authenticate,
+  isAffiliate,
+  getAffiliateProducts
+);
 module.exports = router;
