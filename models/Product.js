@@ -75,6 +75,11 @@ const Product = sequelize.define('Product', {
     type: DataTypes.STRING(500),
     allowNull: true
   },
+  affiliateId: {
+    type: DataTypes.STRING(100),
+    allowNull: true,
+    comment: 'Affiliate ID of the affiliate who added this product'
+  },
   isActive: {
     type: DataTypes.BOOLEAN,
     defaultValue: true

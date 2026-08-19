@@ -204,6 +204,8 @@ const getMasterProducts = async (req, res) => {
   }
 };
 
+// controllers/productController.js
+
 // ============= AFFILIATE: SELECT MASTER PRODUCT & ADD TO STORE =============
 const affiliateAddProduct = async (req, res) => {
   const transaction = await sequelize.transaction();
@@ -219,7 +221,7 @@ const affiliateAddProduct = async (req, res) => {
 
     const {
       masterProductId,  // ID of the master product to select
-      affiliateUrl,
+      affiliateId,      // ✅ Changed from affiliateUrl to affiliateId
       commissionRate,
     } = req.body;
 
@@ -231,10 +233,10 @@ const affiliateAddProduct = async (req, res) => {
       });
     }
 
-    if (!affiliateUrl) {
+    if (!affiliateId) {  // ✅ Changed from affiliateUrl
       return res.status(400).json({
         success: false,
-        error: 'Affiliate URL is required'
+        error: 'Affiliate ID is required'
       });
     }
 
@@ -251,6 +253,21 @@ const affiliateAddProduct = async (req, res) => {
       return res.status(400).json({
         success: false,
         error: 'Commission rate must be between 10% and 25%'
+      });
+    }
+
+    // ✅ Find the affiliate by affiliateId (not by id)
+    const affiliateUser = await User.findOne({
+      where: { 
+        affiliateId: affiliateId,  // ✅ Search by affiliateId string
+        role: 'affiliate'
+      }
+    });
+
+    if (!affiliateUser) {
+      return res.status(404).json({
+        success: false,
+        error: 'Affiliate not found. Please provide a valid affiliate ID.'
       });
     }
 
@@ -274,7 +291,7 @@ const affiliateAddProduct = async (req, res) => {
     const existingProduct = await Product.findOne({
       where: {
         sku: masterProduct.sku,
-        addedBy: req.user.id,
+        addedBy: affiliateUser.id,
         status: 'active'
       }
     });
@@ -289,14 +306,14 @@ const affiliateAddProduct = async (req, res) => {
     // Create a new active product based on master product
     const newProduct = await Product.create({
       name: masterProduct.name,
-      slug: masterProduct.slug,
+      slug: masterProduct.slug + '-' + Date.now().toString(36),
       description: masterProduct.description,
       shortDescription: masterProduct.shortDescription,
       price: masterProduct.price,
       company: masterProduct.company,
       categoryId: masterProduct.categoryId,
       brand: masterProduct.brand,
-      sku: masterProduct.sku,
+      sku: masterProduct.sku + '-' + Date.now().toString(36),
       stock: masterProduct.stock,
       serviceId: masterProduct.serviceId,
       images: masterProduct.images,
@@ -305,19 +322,20 @@ const affiliateAddProduct = async (req, res) => {
       specifications: masterProduct.specifications,
       metaTitle: masterProduct.metaTitle,
       metaDescription: masterProduct.metaDescription,
-      addedBy: req.user.id,
+      addedBy: affiliateUser.id,
       addedByRole: 'affiliate',
-      isActive: true,  // Active for public
-      isMaster: false, // Not a master product
-      status: 'active', // Active status
+      isActive: true,
+      isMaster: false,
+      status: 'active',
       isFeatured: false,
-      affiliateUrl: affiliateUrl,
+      affiliateUrl: null,  // No affiliate URL needed
       commissionRate: rate,
-      affiliateEmail: req.user.email,
+      affiliateEmail: affiliateUser.email,
+      affiliateId: affiliateUser.affiliateId,  // ✅ Store the affiliateId
       adminCommissionShare: rate,
     }, { transaction });
 
-    // Mark master product as taken (status = pending or used)
+    // Mark master product as taken
     await masterProduct.update({
       status: 'pending',
       isActive: false
