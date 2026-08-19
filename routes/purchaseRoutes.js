@@ -43,4 +43,50 @@ router.get('/admin/purchase/:id', authenticate, isAdmin, getPurchaseById);
 // Verify payment
 router.put('/admin/purchase/:orderId/verify', authenticate, isAdmin, verifyPayment);
 
+// routes/productRoutes.js
+
+// ============= ADMIN ROUTES =============
+
+// ADMIN: Create master product (draft, not public)
+router.post(
+  '/admin/products/master',
+  authenticate,
+  isAdmin,
+  uploadProduct.array('images', 10),
+  createMasterProduct
+);
+
+// ADMIN: Get all master products
+router.get(
+  '/admin/products/master',
+  authenticate,
+  isAdmin,
+  getMasterProducts
+);
+
+// ============= AFFILIATE ROUTES =============
+
+// AFFILIATE: Get available master products to choose from
+router.get(
+  '/affiliate/products/available',
+  authenticate,
+  isAffiliate,
+  getAvailableMasterProducts
+);
+
+// AFFILIATE: Select master product and add to store
+router.post(
+  '/affiliate/products/add',
+  authenticate,
+  isAffiliate,
+  affiliateAddProduct
+);
+
+// AFFILIATE: View their own products
+router.get(
+  '/affiliate/products',
+  authenticate,
+  isAffiliate,
+  getAffiliateProducts
+);
 module.exports = router;

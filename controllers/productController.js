@@ -6,16 +6,15 @@ const { Op } = require('sequelize');
 const { sequelize } = require('../config/db');
 const { cloudinaryUtils } = require('../config/Cloudinary');
 
-// ============= ADD ADMIN'S OWN PRODUCT (Admin only) =============
-const addAdminProduct = async (req, res) => {
+// ============= ADMIN: CREATE MASTER PRODUCT (Draft) =============
+const createMasterProduct = async (req, res) => {
   const transaction = await sequelize.transaction();
   
   try {
-    // Only admin can add admin products
     if (req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
-        error: 'Access denied. Only Admin can add products.'
+        error: 'Access denied. Only Admin can create master products.'
       });
     }
 
@@ -100,7 +99,7 @@ const addAdminProduct = async (req, res) => {
       mainImageUrl = imageUrls[0];
     }
 
-    // Build product data - Admin's own products (no affiliate fields)
+    // Build master product data (draft, not public)
     const productData = {
       name,
       slug,
@@ -120,10 +119,11 @@ const addAdminProduct = async (req, res) => {
       metaTitle: metaTitle || name,
       metaDescription: metaDescription || `${name} - ${company} - ${category}`,
       addedBy: req.user.id,
-      addedByRole: 'admin',  // Marked as admin's own product
-      isActive: true,
+      addedByRole: 'admin',
+      isActive: false,  // Not active until affiliate selects it
+      isMaster: true,   // Mark as master product
+      status: 'draft',  // Draft status
       isFeatured: false,
-      // Admin's own products don't have affiliate fields
       affiliateUrl: null,
       commissionRate: null,
       affiliateEmail: null,
@@ -152,80 +152,96 @@ const addAdminProduct = async (req, res) => {
     res.status(201).json({
       success: true,
       data: completeProduct,
-      message: 'Product added successfully!'
+      message: 'Master product created successfully! It will be available for affiliates to select.'
     });
 
   } catch (err) {
     await transaction.rollback();
-    console.error("Add Admin Product Error:", err);
+    console.error("Create Master Product Error:", err);
     res.status(500).json({
       success: false,
-      error: "Failed to add product: " + err.message
+      error: "Failed to create master product: " + err.message
     });
   }
 };
 
-// ============= ADD AFFILIATE PRODUCT (Admin adds product suggested by affiliate) =============
-const addAffiliateProduct = async (req, res) => {
-  const transaction = await sequelize.transaction();
-  
+// ============= ADMIN: GET ALL MASTER PRODUCTS (For Affiliate Selection) =============
+const getMasterProducts = async (req, res) => {
   try {
-    // Only admin can add affiliate products
     if (req.user.role !== 'admin') {
       return res.status(403).json({
         success: false,
-        error: 'Access denied. Only Admin can add affiliate products.'
+        error: 'Access denied. Admin only.'
+      });
+    }
+
+    const products = await Product.findAll({
+      where: {
+        isMaster: true,
+        status: 'draft'  // Only show draft master products
+      },
+      include: [
+        {
+          model: Category,
+          as: 'category',
+          attributes: ['id', 'name', 'slug']
+        }
+      ],
+      order: [['createdAt', 'DESC']]
+    });
+
+    res.json({
+      success: true,
+      data: products
+    });
+
+  } catch (err) {
+    console.error("Get Master Products Error:", err);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch master products: " + err.message
+    });
+  }
+};
+
+// ============= AFFILIATE: SELECT MASTER PRODUCT & ADD TO STORE =============
+const affiliateAddProduct = async (req, res) => {
+  const transaction = await sequelize.transaction();
+  
+  try {
+    // Only affiliates can add products
+    if (req.user.role !== 'affiliate') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Only affiliates can add products.'
       });
     }
 
     const {
-      name,
-      productId,
-      price,
-      company,
-      category,
-      description,
-      shortDescription,
-      brand,
-      sku,
-      stock,
-      affiliateId,        // The affiliate who suggested this product
-      affiliateUrl,       // Affiliate's referral URL
-      commissionRate,     // Commission rate for this affiliate
-      tags,
-      specifications,
-      metaTitle,
-      metaDescription,
-      serviceId
+      masterProductId,  // ID of the master product to select
+      affiliateUrl,
+      commissionRate,
     } = req.body;
 
     // Validate required fields
-    if (!name || !productId || !price || !company || !category) {
+    if (!masterProductId) {
       return res.status(400).json({
         success: false,
-        error: 'Name, Product ID, Price, Company, and Category are required fields'
-      });
-    }
-
-    // Validate affiliate-specific required fields
-    if (!affiliateId) {
-      return res.status(400).json({
-        success: false,
-        error: 'Affiliate ID is required for affiliate product addition'
+        error: 'Master product ID is required'
       });
     }
 
     if (!affiliateUrl) {
       return res.status(400).json({
         success: false,
-        error: 'Affiliate URL is required for affiliate product'
+        error: 'Affiliate URL is required'
       });
     }
 
     if (!commissionRate) {
       return res.status(400).json({
         success: false,
-        error: 'Commission rate is required for affiliate product'
+        error: 'Commission rate is required'
       });
     }
 
@@ -238,111 +254,79 @@ const addAffiliateProduct = async (req, res) => {
       });
     }
 
-    // Verify that the affiliate exists
-    const affiliateUser = await User.findOne({
-      where: { 
-        id: affiliateId,
-        role: 'affiliate'
+    // Find the master product
+    const masterProduct = await Product.findOne({
+      where: {
+        id: masterProductId,
+        isMaster: true,
+        status: 'draft'
       }
     });
 
-    if (!affiliateUser) {
+    if (!masterProduct) {
       return res.status(404).json({
         success: false,
-        error: 'Affiliate not found. Please provide a valid affiliate ID.'
+        error: 'Master product not found or already taken'
       });
     }
 
-    // Check if product exists
+    // Check if this affiliate already has this product
     const existingProduct = await Product.findOne({
-      where: { 
-        [Op.or]: [
-          { sku: productId },
-          { slug: name.toLowerCase().replace(/[^a-z0-9]+/g, '-') }
-        ]
+      where: {
+        sku: masterProduct.sku,
+        addedBy: req.user.id,
+        status: 'active'
       }
     });
 
     if (existingProduct) {
       return res.status(400).json({
         success: false,
-        error: 'Product with this ID or name already exists'
+        error: 'You have already added this product'
       });
     }
 
-    // Find or create category
-    let categoryRecord = await Category.findOne({
-      where: { 
-        [Op.or]: [
-          { name: category },
-          { slug: category.toLowerCase().replace(/[^a-z0-9]+/g, '-') }
-        ]
-      }
-    });
-
-    if (!categoryRecord) {
-      categoryRecord = await Category.create({
-        name: category,
-        slug: category.toLowerCase().replace(/[^a-z0-9]+/g, '-'),
-        isActive: true
-      }, { transaction });
-    }
-
-    // Generate slug from name
-    const slug = name.toLowerCase().replace(/[^a-z0-9]+/g, '-') + '-' + Date.now().toString(36);
-
-    // Handle image uploads
-    let imageUrls = [];
-    let mainImageUrl = null;
-
-    if (req.files && req.files.length > 0) {
-      const uploadPromises = req.files.map(file => 
-        cloudinaryUtils.uploadImage(file.path, {
-          folder: `products/${slug}`,
-          public_id: `${slug}-${Date.now()}`
-        })
-      );
-      
-      const uploadResults = await Promise.all(uploadPromises);
-      imageUrls = uploadResults.map(result => result.secure_url);
-      mainImageUrl = imageUrls[0];
-    }
-
-    // Build product data with affiliate fields
-    const productData = {
-      name,
-      slug,
-      description: description || `${name} - Premium quality product from ${company}`,
-      shortDescription: shortDescription || null,
-      price: parseFloat(price),
-      company,
-      categoryId: categoryRecord.id,
-      brand: brand || company,
-      sku: productId,
-      stock: stock ? parseInt(stock) : 0,
-      serviceId: serviceId || null,
-      images: imageUrls,
-      mainImage: mainImageUrl,
-      tags: tags || [],
-      specifications: specifications || {},
-      metaTitle: metaTitle || name,
-      metaDescription: metaDescription || `${name} - ${company} - ${category}`,
-      addedBy: affiliateId,        // The affiliate who suggested it
-      addedByRole: 'affiliate',    // Marked as affiliate product
-      isActive: true,
+    // Create a new active product based on master product
+    const newProduct = await Product.create({
+      name: masterProduct.name,
+      slug: masterProduct.slug,
+      description: masterProduct.description,
+      shortDescription: masterProduct.shortDescription,
+      price: masterProduct.price,
+      company: masterProduct.company,
+      categoryId: masterProduct.categoryId,
+      brand: masterProduct.brand,
+      sku: masterProduct.sku,
+      stock: masterProduct.stock,
+      serviceId: masterProduct.serviceId,
+      images: masterProduct.images,
+      mainImage: masterProduct.mainImage,
+      tags: masterProduct.tags,
+      specifications: masterProduct.specifications,
+      metaTitle: masterProduct.metaTitle,
+      metaDescription: masterProduct.metaDescription,
+      addedBy: req.user.id,
+      addedByRole: 'affiliate',
+      isActive: true,  // Active for public
+      isMaster: false, // Not a master product
+      status: 'active', // Active status
       isFeatured: false,
-      // Affiliate-specific fields
       affiliateUrl: affiliateUrl,
       commissionRate: rate,
-      affiliateEmail: affiliateUser.email,
-      adminCommissionShare: rate,  // Admin gets this commission when sold
-    };
+      affiliateEmail: req.user.email,
+      adminCommissionShare: rate,
+    }, { transaction });
 
-    const product = await Product.create(productData, { transaction });
+    // Mark master product as taken (status = pending or used)
+    await masterProduct.update({
+      status: 'pending',
+      isActive: false
+    }, { transaction });
+
     await transaction.commit();
 
-    // Fetch complete product with affiliate details
-    const completeProduct = await Product.findByPk(product.id, {
+    // Fetch complete product
+    const completeProduct = await Product.findByPk(newProduct.id, {
       include: [
         {
           model: Category,
@@ -360,15 +344,55 @@ const addAffiliateProduct = async (req, res) => {
     res.status(201).json({
       success: true,
       data: completeProduct,
-      message: `Affiliate product added successfully for ${affiliateUser.name} with ${rate}% commission rate!`
+      message: `Product added successfully with ${rate}% commission rate!`
     });
 
   } catch (err) {
     await transaction.rollback();
-    console.error("Add Affiliate Product Error:", err);
+    console.error("Affiliate Add Product Error:", err);
     res.status(500).json({
       success: false,
-      error: "Failed to add affiliate product: " + err.message
+      error: "Failed to add product: " + err.message
+    });
+  }
+};
+
+// ============= AFFILIATE: GET AVAILABLE MASTER PRODUCTS =============
+const getAvailableMasterProducts = async (req, res) => {
+  try {
+    // Only affiliates can view
+    if (req.user.role !== 'affiliate') {
+      return res.status(403).json({
+        success: false,
+        error: 'Access denied. Only affiliates can view available products.'
+      });
+    }
+
+    const products = await Product.findAll({
+      where: {
+        isMaster: true,
+        status: 'draft'
+      },
+      include: [
+        {
+          model: Category,
+          as: 'category',
+          attributes: ['id', 'name', 'slug']
+        }
+      ],
+      order: [['createdAt', 'DESC']]
+    });
+
+    res.json({
+      success: true,
+      data: products
+    });
+
+  } catch (err) {
+    console.error("Get Available Master Products Error:", err);
+    res.status(500).json({
+      success: false,
+      error: "Failed to fetch available products: " + err.message
     });
   }
 };
