@@ -13,7 +13,8 @@ const {
   getAllPurchases,
   verifyPayment,
   getPurchaseById,
-  getMyCommissions
+  getMyCommissions,
+  getAffiliatePurchases
 } = require('../controllers/purchaseController');
 
 // ============= USER ROUTES =============
