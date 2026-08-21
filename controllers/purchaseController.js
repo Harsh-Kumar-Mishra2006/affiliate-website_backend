@@ -802,6 +802,78 @@ const getMyCommissions = async (req, res) => {
     });
   }
 };
+// ============= AFFILIATE: Get Affiliate Purchases =============
+const getAffiliatePurchases = async (req, res) => {
+  try {
+    const affiliateId = req.user.id;
+    const { page = 1, limit = 20, paymentStatus, status, search } = req.query;
+    const offset = (page - 1) * limit;
+
+    const whereClause = { affiliateId: affiliateId };
+    if (paymentStatus) whereClause.paymentStatus = paymentStatus;
+    if (status) whereClause.status = status;
+    if (search) {
+      whereClause[Op.or] = [
+        { orderId: { [Op.like]: `%${search}%` } },
+        { buyerName: { [Op.like]: `%${search}%` } },
+        { buyerEmail: { [Op.like]: `%${search}%` } },
+        { productName: { [Op.like]: `%${search}%` } }
+      ];
+    }
+
+    const { count, rows } = await Purchase.findAndCountAll({
+      where: whereClause,
+      include: [
+        {
+          model: Product,
+          as: 'product',
+          attributes: ['id', 'name', 'mainImage', 'company', 'price']
+        },
+        {
+          model: User,
+          as: 'user',
+          attributes: ['id', 'name', 'email', 'phone']
+        }
+      ],
+      order: [['createdAt', 'DESC']],
+      limit: parseInt(limit),
+      offset: parseInt(offset),
+      distinct: true
+    });
+
+    // Summary for affiliate
+    const summary = {
+      total: await Purchase.count({ where: { affiliateId } }),
+      totalRevenue: await Purchase.sum('totalAmount', { where: { affiliateId } }) || 0,
+      totalCommission: await Purchase.sum('commissionAmount', { where: { affiliateId } }) || 0,
+      pending: await Purchase.count({ where: { affiliateId, paymentStatus: 'pending' } }),
+      verified: await Purchase.count({ where: { affiliateId, paymentStatus: 'verified' } }),
+      completed: await Purchase.count({ where: { affiliateId, status: 'completed' } }),
+      rejected: await Purchase.count({ where: { affiliateId, paymentStatus: 'rejected' } })
+    };
+
+    res.json({
+      success: true,
+      data: {
+        purchases: rows,
+        summary,
+        pagination: {
+          total: count,
+          page: parseInt(page),
+          limit: parseInt(limit),
+          totalPages: Math.ceil(count / limit)
+        }
+      }
+    });
+
+  } catch (err) {
+    console.error('Get Affiliate Purchases Error:', err);
+    res.status(500).json({
+      success: false,
+      error: 'Failed to fetch affiliate purchases: ' + err.message
+    });
+  }
+};
 
 module.exports = {
   initiatePurchase,
@@ -811,5 +883,6 @@ module.exports = {
   getAllPurchases,
   verifyPayment,
   getPurchaseById,
-  getMyCommissions
+  getMyCommissions,
+  getAffiliatePurchases
 };
