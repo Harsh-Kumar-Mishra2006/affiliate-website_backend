@@ -30,6 +30,9 @@ router.get('/purchase/my-purchases', authenticate, getMyPurchases);
 router.get('/purchase/:orderId', authenticate, getPurchaseDetails);
 
 // ============= AFFILIATE ROUTES =============
+// ✅ ADD THIS: Get affiliate purchases (purchases made through affiliate links)
+router.get('/affiliate/purchases', authenticate, isAffiliate, getAffiliatePurchases);
+
 // Get my commissions
 router.get('/affiliate/commissions', authenticate, isAffiliate, getMyCommissions);
 
@@ -42,6 +45,5 @@ router.get('/admin/purchase/:id', authenticate, isAdmin, getPurchaseById);
 
 // Verify payment
 router.put('/admin/purchase/:orderId/verify', authenticate, isAdmin, verifyPayment);
-
 
 module.exports = router;
