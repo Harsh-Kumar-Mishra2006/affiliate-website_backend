@@ -1175,7 +1175,7 @@ const getProductStats = async (req, res) => {
     const categoryStats = await Product.findAll({
       attributes: [
         'categoryId',
-        [sequelize.fn('COUNT', sequelize.col('id')), 'count']
+        [sequelize.fn('COUNT', sequelize.col('Product.id')), 'count']
       ],
       include: [
         {

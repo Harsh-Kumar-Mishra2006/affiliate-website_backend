@@ -10,18 +10,14 @@ const {
   getMasterProducts,
   affiliateAddProduct,
   getAvailableMasterProducts,
-  // Public routes
   getAllProducts,
   getProductById,
   getProductsByCategory,
   searchProducts,
   getFeaturedProducts,
-  // Update and Delete
   updateProduct,
   deleteProduct,
-  // Affiliate routes
   getAffiliateProducts,
-  // Admin routes
   getAdminProducts,
   getAdminProductsWithCommission,
   getProductStats,
@@ -29,24 +25,27 @@ const {
   getProductPurchaseHistory
 } = require('../controllers/productController');
 
-// ============= PUBLIC ROUTES =============
-// Get all products (public)
-router.get('/products', getAllProducts);
+// ============================================
+// AFFILIATE ROUTES (Must come BEFORE /products/:id)
+// ============================================
 
-// Search products
-router.get('/products/search', searchProducts);
+// AFFILIATE: Get available master products
+router.get(
+  '/affiliate/products/available',
+  authenticate,
+  isAffiliate,
+  getAvailableMasterProducts
+);
 
-// Get featured products
-router.get('/products/featured', getFeaturedProducts);
+// AFFILIATE: Select master product and add to store
+router.post(
+  '/affiliate/products/add',
+  authenticate,
+  isAffiliate,
+  affiliateAddProduct
+);
 
-// Get products by category
-router.get('/products/category/:categorySlug', getProductsByCategory);
-
-// Get product by ID or slug
-router.get('/products/:id', getProductById);
-
-// ============= AFFILIATE ROUTES =============
-// Affiliate view their own products
+// AFFILIATE: View their own products
 router.get(
   '/affiliate/products',
   authenticate,
@@ -54,7 +53,26 @@ router.get(
   getAffiliateProducts
 );
 
-// ============= ADMIN ROUTES =============
+// ============================================
+// ADMIN ROUTES
+// ============================================
+
+// ADMIN: Create master product
+router.post(
+  '/admin/products/master',
+  authenticate,
+  isAdmin,
+  uploadProduct.array('images', 10),
+  createMasterProduct
+);
+
+// ADMIN: Get all master products
+router.get(
+  '/admin/products/master',
+  authenticate,
+  isAdmin,
+  getMasterProducts
+);
 
 // ADMIN: View all products with filters
 router.get(
@@ -96,7 +114,21 @@ router.get(
   getProductPurchaseHistory
 );
 
-// ============= UPDATE & DELETE (Protected) =============
+// ============================================
+// PUBLIC ROUTES
+// ============================================
+
+router.get('/products', getAllProducts);
+router.get('/products/search', searchProducts);
+router.get('/products/featured', getFeaturedProducts);
+router.get('/products/category/:categorySlug', getProductsByCategory);
+
+// ⚠️ This must be LAST - it catches /:id
+router.get('/products/:id', getProductById);
+
+// ============================================
+// UPDATE & DELETE (Protected)
+// ============================================
 
 // Update product (admin can update any, affiliate can update their own)
 router.put(
@@ -114,46 +146,4 @@ router.delete(
   deleteProduct
 );
 
-// ADMIN: Create master product (draft, not public)
-router.post(
-  '/admin/products/master',
-  authenticate,
-  isAdmin,
-  uploadProduct.array('images', 10),
-  createMasterProduct
-);
-
-// ADMIN: Get all master products
-router.get(
-  '/admin/products/master',
-  authenticate,
-  isAdmin,
-  getMasterProducts
-);
-
-// ============= AFFILIATE ROUTES =============
-
-// AFFILIATE: Get available master products to choose from
-router.get(
-  '/affiliate/products/available',
-  authenticate,
-  isAffiliate,
-  getAvailableMasterProducts
-);
-
-// AFFILIATE: Select master product and add to store
-router.post(
-  '/affiliate/products/add',
-  authenticate,
-  isAffiliate,
-  affiliateAddProduct
-);
-
-// AFFILIATE: View their own products
-router.get(
-  '/affiliate/products',
-  authenticate,
-  isAffiliate,
-  getAffiliateProducts
-);
 module.exports = router;
