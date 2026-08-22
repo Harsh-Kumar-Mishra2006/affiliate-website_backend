@@ -145,20 +145,23 @@ if (product.addedByRole === 'affiliate') {
     };
 
     // If product is from affiliate, show commission info
-    if (product.addedByRole === 'affiliate') {
-      paymentInstructions.commissionInfo = {
-        commissionRate: commissionRate,
-        adminCommission: adminCommissionAmount,
-        affiliateCommission: affiliateCommissionAmount,
-        affiliateName: product.addedByUser?.name || 'Affiliate',
-        message: `Admin gets ${commissionRate}% (₹${adminCommissionAmount}), Affiliate gets ${100 - commissionRate}% (₹${affiliateCommissionAmount})`
-      };
-    } else {
-      paymentInstructions.commissionInfo = {
-        type: 'admin_product',
-        message: 'This is an admin product. Admin gets 100% (₹' + totalAmount + ')'
-      };
-    }
+    
+// If product is from affiliate, show commission info
+if (product.addedByRole === 'affiliate') {
+  paymentInstructions.commissionInfo = {
+    commissionRate: commissionRate,
+    adminCommission: adminCommissionAmount,
+    affiliateCommission: affiliateCommissionAmount,
+    affiliateName: product.addedByUser?.name || 'Affiliate',
+    // 🔄 Updated message
+    message: `Affiliate gets ${commissionRate}% (₹${affiliateCommissionAmount}), Admin gets ${100 - commissionRate}% (₹${adminCommissionAmount})`
+  };
+} else {
+  paymentInstructions.commissionInfo = {
+    type: 'admin_product',
+    message: 'This is an admin product. Admin gets 100% (₹' + totalAmount + ')'
+  };
+}
 
     res.status(201).json({
       success: true,
@@ -172,8 +175,8 @@ if (product.addedByRole === 'affiliate') {
           commissionRate: commissionRate,
           adminCommissionAmount: adminCommissionAmount,
           affiliateCommissionAmount: affiliateCommissionAmount,
-          adminGets: product.addedByRole === 'affiliate' ? `${commissionRate}%` : '100%',
-          affiliateGets: product.addedByRole === 'affiliate' ? `${100 - commissionRate}%` : '0%'
+          adminGets: product.addedByRole === 'affiliate' ? `${100 - commissionRate}%` : '100%', 
+          affiliateGets: product.addedByRole === 'affiliate' ? `${commissionRate}%` : '0%'      
         },
         paymentInstructions
       },
