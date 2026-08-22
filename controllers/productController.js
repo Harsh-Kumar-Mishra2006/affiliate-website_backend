@@ -332,7 +332,7 @@ const affiliateAddProduct = async (req, res) => {
       commissionRate: rate,
       affiliateEmail: affiliateUser.email,
       affiliateId: affiliateUser.affiliateId,  // ✅ Store the affiliateId
-      adminCommissionShare: rate,
+      adminCommissionShare: 100-rate,
     }, { transaction });
 
     // Mark master product as taken
