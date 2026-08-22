@@ -553,108 +553,110 @@ const verifyPayment = async (req, res) => {
         transaction
       });
 
-      // === COMMISSION DISTRIBUTION LOGIC ===
-      const totalAmount = parseFloat(purchase.totalAmount);
-      
-      if (purchase.product && purchase.product.addedByRole === 'affiliate') {
-        // ✅ AFFILIATE PRODUCT: Admin gets commissionRate%, Affiliate gets (100 - commissionRate)%
-        const commissionRate = parseFloat(purchase.commissionRate) || 0;
-        
-        // Admin gets commissionRate% of total
-        const adminCommission = parseFloat((totalAmount * (commissionRate / 100)).toFixed(2));
-        // Affiliate gets (100 - commissionRate)% of total
-        const affiliateCommission = parseFloat((totalAmount * ((100 - commissionRate) / 100)).toFixed(2));
+      // controllers/purchaseController.js - verifyPayment
 
-        // Create commission record for affiliate
-        await Commission.create({
-          affiliateId: purchase.affiliateId,
-          adminId: purchase.product.addedBy,
-          productId: purchase.productId,
-          purchaseId: purchase.id,
-          orderId: purchase.orderId,
-          affiliateCommissionAmount: affiliateCommission,
-          affiliateCommissionRate: 100 - commissionRate, // Affiliate gets remaining percentage
-          adminCommissionAmount: adminCommission,
-          adminCommissionRate: commissionRate, // Admin gets commission rate percentage
-          totalAmount: totalAmount,
-          status: 'approved',
-          paymentDate: new Date(),
-          notes: `Commission split: Admin gets ${commissionRate}% (₹${adminCommission}), Affiliate gets ${100 - commissionRate}% (₹${affiliateCommission})`
-        }, { transaction });
+// === COMMISSION DISTRIBUTION LOGIC ===
+const totalAmount = parseFloat(purchase.totalAmount);
 
-        // Update affiliate's earnings (affiliate gets 100 - commissionRate%)
-        if (purchase.affiliateId) {
-          await User.increment('totalEarnings', {
-            by: affiliateCommission,
-            where: { id: purchase.affiliateId },
-            transaction
-          });
+if (purchase.product && purchase.product.addedByRole === 'affiliate') {
+  // ✅ AFFILIATE PRODUCT: Affiliate gets commissionRate%, Admin gets (100 - commissionRate)%
+  const commissionRate = parseFloat(purchase.commissionRate) || 0;
+  
+  // 🔄 SWAPPED: Affiliate gets commissionRate% of total
+  const affiliateCommission = parseFloat((totalAmount * (commissionRate / 100)).toFixed(2));
+  // Admin gets (100 - commissionRate)% of total
+  const adminCommission = parseFloat((totalAmount * ((100 - commissionRate) / 100)).toFixed(2));
 
-          await User.increment('availableBalance', {
-            by: affiliateCommission,
-            where: { id: purchase.affiliateId },
-            transaction
-          });
-        }
+  // Create commission record for affiliate
+  await Commission.create({
+    affiliateId: purchase.affiliateId,
+    adminId: purchase.product.addedBy,
+    productId: purchase.productId,
+    purchaseId: purchase.id,
+    orderId: purchase.orderId,
+    affiliateCommissionAmount: affiliateCommission,
+    affiliateCommissionRate: commissionRate, // 🔄 Affiliate gets commission rate
+    adminCommissionAmount: adminCommission,
+    adminCommissionRate: 100 - commissionRate, // 🔄 Admin gets remaining percentage
+    totalAmount: totalAmount,
+    status: 'approved',
+    paymentDate: new Date(),
+    notes: `Commission split: Affiliate gets ${commissionRate}% (₹${affiliateCommission}), Admin gets ${100 - commissionRate}% (₹${adminCommission})`
+  }, { transaction });
 
-        // Update admin's earnings (admin gets commissionRate%)
-        await User.increment('totalEarnings', {
-          by: adminCommission,
-          where: { id: purchase.product.addedBy },
-          transaction
-        });
+  // Update affiliate's earnings (affiliate gets commissionRate%)
+  if (purchase.affiliateId) {
+    await User.increment('totalEarnings', {
+      by: affiliateCommission,
+      where: { id: purchase.affiliateId },
+      transaction
+    });
 
-        await User.increment('availableBalance', {
-          by: adminCommission,
-          where: { id: purchase.product.addedBy },
-          transaction
-        });
+    await User.increment('availableBalance', {
+      by: affiliateCommission,
+      where: { id: purchase.affiliateId },
+      transaction
+    });
+  }
 
-        console.log(`✅ Commission Distributed (Affiliate Product):
-          - Admin (${purchase.product.addedBy}): ${commissionRate}% = ₹${adminCommission}
-          - Affiliate (${purchase.affiliateId}): ${100 - commissionRate}% = ₹${affiliateCommission}
-          - Total: ₹${totalAmount}
-        `);
-      } else if (purchase.product) {
-        // ✅ ADMIN PRODUCT: Admin gets 100%
-        const adminCommission = totalAmount;
+  // Update admin's earnings (admin gets 100 - commissionRate%)
+  await User.increment('totalEarnings', {
+    by: adminCommission,
+    where: { id: purchase.product.addedBy },
+    transaction
+  });
 
-        // Create commission record for admin
-        await Commission.create({
-          affiliateId: null,
-          adminId: purchase.product.addedBy,
-          productId: purchase.productId,
-          purchaseId: purchase.id,
-          orderId: purchase.orderId,
-          affiliateCommissionAmount: 0,
-          affiliateCommissionRate: 0,
-          adminCommissionAmount: adminCommission,
-          adminCommissionRate: 100,
-          totalAmount: totalAmount,
-          status: 'approved',
-          paymentDate: new Date(),
-          notes: `Full commission to admin (product owner) - ₹${adminCommission} (100%)`
-        }, { transaction });
+  await User.increment('availableBalance', {
+    by: adminCommission,
+    where: { id: purchase.product.addedBy },
+    transaction
+  });
 
-        // Update admin's earnings
-        await User.increment('totalEarnings', {
-          by: adminCommission,
-          where: { id: purchase.product.addedBy },
-          transaction
-        });
+  console.log(`✅ Commission Distributed (Affiliate Product):
+    - Affiliate (${purchase.affiliateId}): ${commissionRate}% = ₹${affiliateCommission}
+    - Admin (${purchase.product.addedBy}): ${100 - commissionRate}% = ₹${adminCommission}
+    - Total: ₹${totalAmount}
+  `);
+} else if (purchase.product) {
+  // ✅ ADMIN PRODUCT: Admin gets 100%
+  const adminCommission = totalAmount;
 
-        await User.increment('availableBalance', {
-          by: adminCommission,
-          where: { id: purchase.product.addedBy },
-          transaction
-        });
+  // Create commission record for admin
+  await Commission.create({
+    affiliateId: null,
+    adminId: purchase.product.addedBy,
+    productId: purchase.productId,
+    purchaseId: purchase.id,
+    orderId: purchase.orderId,
+    affiliateCommissionAmount: 0,
+    affiliateCommissionRate: 0,
+    adminCommissionAmount: adminCommission,
+    adminCommissionRate: 100,
+    totalAmount: totalAmount,
+    status: 'approved',
+    paymentDate: new Date(),
+    notes: `Full commission to admin (product owner) - ₹${adminCommission} (100%)`
+  }, { transaction });
 
-        console.log(`✅ Commission Distributed (Admin Product):
-          - Admin (${purchase.product.addedBy}): 100% = ₹${adminCommission}
-          - Total: ₹${totalAmount}
-        `);
-      }
-    }
+  // Update admin's earnings
+  await User.increment('totalEarnings', {
+    by: adminCommission,
+    where: { id: purchase.product.addedBy },
+    transaction
+  });
+
+  await User.increment('availableBalance', {
+    by: adminCommission,
+    where: { id: purchase.product.addedBy },
+    transaction
+  });
+
+  console.log(`✅ Commission Distributed (Admin Product):
+    - Admin (${purchase.product.addedBy}): 100% = ₹${adminCommission}
+    - Total: ₹${totalAmount}
+  `);
+ }
+}
 
     await transaction.commit();
 
