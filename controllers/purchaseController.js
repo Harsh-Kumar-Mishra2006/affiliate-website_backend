@@ -75,25 +75,25 @@ const initiatePurchase = async (req, res) => {
 
     // Determine commission structure based on who added the product
     let affiliateId = null;
-    let commissionRate = 0;
-    let affiliateCommissionAmount = 0;
-    let adminCommissionAmount = 0;
+let commissionRate = 0;
+let affiliateCommissionAmount = 0;
+let adminCommissionAmount = 0;
 
-    if (product.addedByRole === 'affiliate') {
-      // ✅ Product added by affiliate - commission split
-      affiliateId = product.addedBy;
-      commissionRate = parseFloat(product.commissionRate) || 0;
-      
-      // Admin gets commissionRate% (e.g., 20%), Affiliate gets (100 - commissionRate)% (e.g., 80%)
-      adminCommissionAmount = parseFloat((totalAmount * (commissionRate / 100)).toFixed(2));
-      affiliateCommissionAmount = parseFloat((totalAmount * ((100 - commissionRate) / 100)).toFixed(2));
-    } else {
-      // ✅ Product added by admin - 100% goes to admin
-      affiliateId = null;
-      commissionRate = 0;
-      affiliateCommissionAmount = 0;
-      adminCommissionAmount = parseFloat(totalAmount);
-    }
+if (product.addedByRole === 'affiliate') {
+  // ✅ Product added by affiliate - commission split
+  affiliateId = product.addedBy;
+  commissionRate = parseFloat(product.commissionRate) || 0;
+  
+  // 🔄 SWAPPED: Affiliate gets commissionRate% (e.g., 10%), Admin gets (100 - commissionRate)% (e.g., 90%)
+  affiliateCommissionAmount = parseFloat((totalAmount * (commissionRate / 100)).toFixed(2));
+  adminCommissionAmount = parseFloat((totalAmount * ((100 - commissionRate) / 100)).toFixed(2));
+} else {
+  // ✅ Product added by admin - 100% goes to admin
+  affiliateId = null;
+  commissionRate = 0;
+  affiliateCommissionAmount = 0;
+  adminCommissionAmount = parseFloat(totalAmount);
+}
 
     // Generate order ID
     const orderId = generateOrderId();
@@ -109,10 +109,10 @@ const initiatePurchase = async (req, res) => {
       productPrice: product.price,
       quantity,
       totalAmount,
-      commissionAmount: affiliateCommissionAmount,
-      commissionRate: commissionRate,
-      adminCommissionAmount: adminCommissionAmount,
-      adminCommissionRate: commissionRate, // Admin's rate is the commission rate
+      commissionAmount: affiliateCommissionAmount,  // Affiliate's commission
+      commissionRate: commissionRate,               // Affiliate's rate
+      adminCommissionAmount: adminCommissionAmount, // Admin's commission
+      adminCommissionRate: 100 - commissionRate,    // Admin's rate (swapped) // Admin's rate is the commission rate
       status: 'pending',
       paymentStatus: 'pending',
       buyerName,
